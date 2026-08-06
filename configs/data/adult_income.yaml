@@ -1,0 +1,21 @@
+name: adult_income
+url: https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data
+target_column: income
+test_size: 0.2
+random_state: 42
+categorical_features:
+  - workclass
+  - education
+  - marital_status
+  - occupation
+  - relationship
+  - race
+  - sex
+  - native_country
+numerical_features:
+  - age
+  - fnlwgt
+  - education_num
+  - capital_gain
+  - capital_loss
+  - hours_per_week

@@ -1,0 +1,3 @@
+tracking_uri: ${hydra:runtime.output_dir}/mlruns
+experiment_name: ${experiment_name}
+run_name: ${model.name}_${data.name}

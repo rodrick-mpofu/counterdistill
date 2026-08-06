@@ -1,0 +1,21 @@
+defaults:
+  - _self_
+  - data: adult_income
+  - model: random_forest
+  - clustering: kmeans
+  - optuna: default
+  - mlflow: default
+
+seed: 42
+device: cpu
+experiment_name: counterdistill_exp
+
+# Global settings
+batch_size: 1000
+num_counterfactuals: 100
+counterfactual_encoding: standard
+
+# Paths
+data_dir: data
+database_dir: database
+output_dir: outputs

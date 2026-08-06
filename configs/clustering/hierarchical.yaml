@@ -1,0 +1,3 @@
+_class_: sklearn.cluster.AgglomerativeClustering
+n_clusters: 5
+linkage: ward

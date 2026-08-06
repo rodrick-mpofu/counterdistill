@@ -1,0 +1,5 @@
+n_trials: 100
+timeout: 3600
+direction: maximize
+storage: sqlite:///optuna_study.db
+study_name: counterdistill_study

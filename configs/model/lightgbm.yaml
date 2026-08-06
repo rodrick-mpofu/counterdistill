@@ -1,0 +1,6 @@
+_class_: lightgbm.LGBMClassifier
+n_estimators: 100
+learning_rate: 0.1
+num_leaves: 31
+max_depth: -1
+random_state: 42
