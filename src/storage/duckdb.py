@@ -178,3 +178,90 @@ class DuckDBStorage:
             if len(result) > 0:
                 return {row[0]: row[1] for row in result.itertuples(index=False)}
             return {}
+
+        def get_model_metrics(
+            self, model_name: str | None = None, limit: int = 10
+        ) -> pl.DataFrame:
+            """
+            Retrieve model metrics from DuckDB.
+            Args:
+                model_name: Optional model name filter
+                limit: Number of records to return
+            Returns:
+                Polars DataFrame with metrics
+            """
+            with duckdb.connect(str(self.db_path)) as conn:
+                query = """
+                    SELECT
+                        model_name,
+                        metric_name,
+                        metric_value,
+                        run_id,
+                        created_at
+                    FROM metrics
+                """
+                if model_name:
+                    query += f" WHERE model_name = '{model_name}'"
+                query += f" ORDER BY created_at DESC LIMIT {limit}"
+
+                result = conn.execute(query).fetchdf()
+                return pl.from_pandas(result)
+
+        def store_metrics(
+            self,
+            model_name: str,
+            metrics: dict[str, float],
+            run_id: str,
+        ) -> None:
+            """
+            Store model metrics in DuckDB.
+            Args:
+                model_name: Name of the model
+                metrics: Dictionary of metric names and values
+                run_id: MLflow run ID
+            """
+            with duckdb.connect(str(self.db_path)) as conn:
+                # Prepare data for insertion
+                records = []
+                for metric_name, metric_value in metrics.items():
+                    if isinstance(metric_value, int | float):
+                        records.append(
+                            {
+                                "model_name": model_name,
+                                "metric_name": metric_name,
+                                "metric_value": float(metric_value),
+                                "run_id": run_id,
+                            }
+                        )
+
+                if not records:
+                    logger.warning("No metrics to store")
+                    return
+
+                # Convert to DataFrame and insert
+                df = pl.DataFrame(records)
+                conn.register("temp_df", df)
+
+                conn.execute(
+                    """
+                        INSERT INTO metrics (
+                            model_name,
+                            metric_name,
+                            metric_value,
+                            run_id,
+                            created_at
+                        )
+                        SELECT
+                            model_name,
+                            metric_name,
+                            metric_value,
+                            run_id,
+                            CURRENT_TIMESTAMP
+                        FROM temp_df
+                    """
+                )
+
+                logger.info(
+                    f"Stored {len(records)} metrics "
+                    f"for {model_name} (run: {run_id})"
+                )
