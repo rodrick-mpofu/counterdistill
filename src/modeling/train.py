@@ -157,11 +157,26 @@ def main(cfg: DictConfig) -> None:
                     if isinstance(value, int | float):
                         mlflow.log_metric(f"{class_name}_{metric_name}", value)
 
-        # Log model
+        # Log model with trusted types based on model type
+        model_class_name = cfg.model._class_.split(".")[-1]
+
+        # Define trusted types for different frameworks
+        trusted_types_map = {
+            "XGBClassifier": ["xgboost.core.Booster", "xgboost.sklearn.XGBClassifier"],
+            "LGBMClassifier": [
+                "collections.OrderedDict",
+                "lightgbm.basic.Booster",
+                "lightgbm.sklearn.LGBMClassifier",
+            ],
+        }
+
+        trusted_types = trusted_types_map.get(model_class_name, None)
+
         mlflow.sklearn.log_model(  # type: ignore
             result["model"],
             name="model",
-            registered_model_name=f"{cfg.model._class_.split('.')[-1]}",
+            registered_model_name=model_class_name,
+            skops_trusted_types=trusted_types,
         )
 
         # Log feature importance if available
