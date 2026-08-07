@@ -7,6 +7,7 @@ from pathlib import Path
 import hydra
 import mlflow
 import numpy as np
+import polars as pl
 from omegaconf import DictConfig, OmegaConf
 
 from src.explainability.dice import DiceExplainer
@@ -47,17 +48,17 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Test data: {x_test.height} samples")
 
     # 2. Feature engineering
-    engine_train = FeatureEngineer(
-        x_train,
+    combined_df = pl.concat([x_train, x_test])
+    engine = FeatureEngineer(
+        combined_df,
         config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
     )
-    x_train_fe = engine_train.build_pipeline()
+    combined_fe = engine.build_pipeline()
 
-    engine_test = FeatureEngineer(
-        x_test,
-        config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
-    )
-    x_test_fe = engine_test.build_pipeline()
+    # Split back
+    n_train = x_train.height
+    x_train_fe = combined_fe[:n_train]
+    x_test_fe = combined_fe[n_train:]
 
     logger.info(f"Features shape: {x_train_fe.width}")
 
