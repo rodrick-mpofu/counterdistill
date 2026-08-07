@@ -104,22 +104,21 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Training data: {x_train.height} samples")
     logger.info(f"Test data: {x_test.height} samples")
 
-    # 2. Feature engineering
-    engine_train = FeatureEngineer(
-        x_train,
-        config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
-    )
-    x_train_fe = engine_train.build_pipeline(
-        scale=cfg.feature_engineering.get("scale_features", False)
-    )
+    # 2. Feature engineering - combine train and test first
+    # Concatenate train and test to ensure consistent encoding
+    combined_df = pl.concat([x_train, x_test])
 
-    engine_test = FeatureEngineer(
-        x_test,
+    # Apply feature engineering to combined data
+    engine = FeatureEngineer(
+        combined_df,
         config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
     )
-    x_test_fe = engine_test.build_pipeline(
-        scale=cfg.feature_engineering.get("scale_features", False)
-    )
+    combined_fe = engine.build_pipeline()
+
+    # Split back into train and test
+    n_train = x_train.height
+    x_train_fe = combined_fe[:n_train]
+    x_test_fe = combined_fe[n_train:]
 
     logger.info(f"Features shape: {x_train_fe.width}")
 
@@ -161,7 +160,7 @@ def main(cfg: DictConfig) -> None:
         # Log model
         mlflow.sklearn.log_model(  # type: ignore
             result["model"],
-            artifact_path="model",
+            name="model",
             registered_model_name=f"{cfg.model._class_.split('.')[-1]}",
         )
 
