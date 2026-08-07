@@ -105,20 +105,38 @@ def main(cfg: DictConfig) -> None:
     logger.info(f"Test data: {x_test.height} samples")
 
     # 2. Feature engineering
-    engine_train = FeatureEngineer(x_train)
-    x_train_fe = engine_train.build_pipeline()
+    engine_train = FeatureEngineer(
+        x_train,
+        config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
+    )
+    x_train_fe = engine_train.build_pipeline(
+        scale=cfg.feature_engineering.get("scale_features", False)
+    )
 
-    engine_test = FeatureEngineer(x_test)
-    x_test_fe = engine_test.build_pipeline()
+    engine_test = FeatureEngineer(
+        x_test,
+        config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
+    )
+    x_test_fe = engine_test.build_pipeline(
+        scale=cfg.feature_engineering.get("scale_features", False)
+    )
 
     logger.info(f"Features shape: {x_train_fe.width}")
 
     # 3. Set up MLflow
-    # Create output directory if it doesn't exist
-    output_dir = Path(cfg.mlflow.tracking_uri).parent
-    output_dir.mkdir(parents=True, exist_ok=True)
+    # Only create directory if using file-based tracking (not SQLite or HTTP)
+    tracking_uri = cfg.mlflow.tracking_uri
+    if not tracking_uri.startswith(("http://", "https://", "sqlite://")):
+        output_dir = Path(tracking_uri)
+        output_dir.mkdir(parents=True, exist_ok=True)
+    # For SQLite, ensure the database directory exists
+    elif tracking_uri.startswith("sqlite:///"):
+        # Extract the database path from sqlite:///path/to/db
+        db_path = tracking_uri.replace("sqlite:///", "")
+        db_dir = Path(db_path).parent
+        db_dir.mkdir(parents=True, exist_ok=True)
 
-    mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
+    mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(cfg.mlflow.experiment_name)
 
     # 4. Train model with MLflow tracking

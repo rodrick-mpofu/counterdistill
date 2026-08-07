@@ -5,6 +5,7 @@ defaults:
   - clustering: kmeans
   - optuna: default
   - mlflow: default
+  - feature_engineering: default
 
 seed: 42
 device: cpu

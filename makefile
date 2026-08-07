@@ -20,10 +20,10 @@ dev:
 	uv sync --dev
 
 train:
-	python src/modeling/train.py
+	uv run python -m src.modeling.train
 
 tune:
-	python src/modeling/optimize.py
+	uv run python -m src.modeling.optimize
 
 dashboard:
 	streamlit run app/streamlit_app.py

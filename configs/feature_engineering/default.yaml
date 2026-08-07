@@ -1,0 +1,52 @@
+# Feature engineering configuration
+numeric_columns:
+  - age
+  - fnlwgt
+  - education_num
+  - capital_gain
+  - capital_loss
+  - hours_per_week
+
+categorical_columns:
+  - workclass
+  - education
+  - marital_status
+  - occupation
+  - relationship
+  - race
+  - sex
+  - native_country
+
+# Age binning configuration
+age_bins: [18, 25, 35, 45, 55, 65]
+age_labels:
+  - child
+  - teen
+  - young
+  - young_adult
+  - middle_age
+  - senior
+  - elderly
+
+# Hours per week binning
+hours_bins: [0, 20, 30, 40, 50]
+hours_labels:
+  - none
+  - part_time
+  - reduced
+  - full_time
+  - overtime
+  - extreme
+
+# Education level binning
+education_bins: [0, 6, 10, 12, 14]
+education_labels:
+  - no_edu
+  - basic
+  - high_school
+  - some_college
+  - bachelor
+  - advanced
+
+# Scaling options
+scale_features: false

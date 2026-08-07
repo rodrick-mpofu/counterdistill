@@ -169,42 +169,37 @@ class AdultIncomeLoader:
         return x, y
 
     def get_train_test_split(
-        self, test_size: float = 0.2, random_state: int = 42
+        self,
+        test_size: float = 0.2,
+        random_state: int = 42,
     ) -> tuple[pl.DataFrame, pl.DataFrame, pl.Series, pl.Series]:
-        """Split data into train and test sets."""
-        x, y = self.get_features_and_target()
-
-        # Convert to numpy for sklearn compatibility
-        import numpy as np
+        """Split data into train and test sets while preserving Polars dtypes."""
         from sklearn.model_selection import train_test_split
 
-        x_np = x.to_numpy()
-        y_np = y.to_numpy()
+        x, y = self.get_features_and_target()
 
-        # Ensure no NaN values
-        if np.isnan(y_np).any():
-            logger.warning("NaN values found in target! Removing them...")
-            valid_idx = ~np.isnan(y_np)
-            x_np = x_np[valid_idx]
-            y_np = y_np[valid_idx]
+        # Create row indices
+        indices = list(range(x.height))
 
-        x_train, x_test, y_train, y_test = train_test_split(
-            x_np, y_np, test_size=test_size, random_state=random_state, stratify=y_np
+        # Split indices using the target for stratification
+        train_idx, test_idx = train_test_split(
+            indices,
+            test_size=test_size,
+            random_state=random_state,
+            stratify=y.to_numpy(),
         )
 
-        # Convert back to Polars - use column names from original
-        column_names = x.columns
+        # Slice the Polars DataFrames directly
+        x_train = x[train_idx]
+        x_test = x[test_idx]
 
-        # Create DataFrames with proper types
-        x_train_pl = pl.DataFrame(
-            {name: x_train[:, i] for i, name in enumerate(column_names)}
+        # Slice the target Series directly
+        y_train = y[train_idx]
+        y_test = y[test_idx]
+
+        logger.info(
+            "Train/test split complete: "
+            f"{x_train.height} train, {x_test.height} test samples"
         )
-        x_test_pl = pl.DataFrame(
-            {name: x_test[:, i] for i, name in enumerate(column_names)}
-        )
 
-        # Create Series for target
-        y_train_pl = pl.Series("target", y_train)
-        y_test_pl = pl.Series("target", y_test)
-
-        return x_train_pl, x_test_pl, y_train_pl, y_test_pl
+        return x_train, x_test, y_train, y_test
