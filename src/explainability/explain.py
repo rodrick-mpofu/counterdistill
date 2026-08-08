@@ -59,6 +59,7 @@ def main(cfg: DictConfig) -> None:
         x_train,
         config=cfg.feature_engineering if hasattr(cfg, "feature_engineering") else None,
     )
+
     x_train_fe = engine.fit_transform()
     x_test_fe = engine.transform(x_test)
     logger.info("Encoded feature count: %d", x_train_fe.width)
@@ -105,12 +106,40 @@ def main(cfg: DictConfig) -> None:
     )
 
     num_samples = int(cfg.get("num_counterfactuals", 100))
+
+    sample_count = min(
+        num_samples,
+        x_test.height,
+    )
+
+    rng = np.random.default_rng(int(cfg.seed))
+
+    if x_test.height > sample_count:
+        selected_indices = np.sort(
+            rng.choice(
+                x_test.height,
+                sample_count,
+                replace=False,
+            )
+        )
+    else:
+        selected_indices = np.arange(
+            x_test.height,
+            dtype=int,
+        )
+
+    logger.info(
+        "Selected %d shared instances for DiCE and SHAP",
+        len(selected_indices),
+    )
+
     cf_df = dice.generate_batch(
         x_test,
         num_samples=num_samples,
         total_cfs=5,
         desired_class="opposite",
         random_seed=int(cfg.seed),
+        selected_indices=selected_indices,
     )
 
     if cf_df.height:
@@ -137,9 +166,12 @@ def main(cfg: DictConfig) -> None:
         class_index=1,
     )
 
+    x_shap = x_test_np[selected_indices]
+
     shap_df = shap_explainer.compute_batch(
-        x_test_np[:num_samples],
+        x_shap,
         feature_names=feature_names,
+        instance_ids=selected_indices,
     )
 
     if shap_df.height:
@@ -153,18 +185,27 @@ def main(cfg: DictConfig) -> None:
 
     logger.info("Computed %d SHAP rows", shap_df.height)
 
-    if run_id:
+    if provided_run_id:
         client = mlflow.tracking.MlflowClient()  # type: ignore
-        run = client.get_run(run_id)
+        run = client.get_run(provided_run_id)
         metrics = run.data.metrics
+
         storage.store_metrics(
             model_name=model_name,
             metrics=metrics,
-            run_id=run_id,
+            run_id=provided_run_id,
         )
-        logger.info("Stored %d metrics for %s", len(metrics), model_name)
+
+        logger.info(
+            "Stored %d metrics for %s",
+            len(metrics),
+            model_name,
+        )
     else:
-        logger.warning("No run_id provided, skipping MLflow metric storage.")
+        logger.info(
+            "Local run %s; skipping MLflow metric storage.",
+            run_id,
+        )
 
     logger.info("Explainability pipeline complete!")
 

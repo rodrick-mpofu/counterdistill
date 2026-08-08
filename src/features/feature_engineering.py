@@ -118,7 +118,12 @@ class FeatureEngineer:
         for col in self.numeric_columns:
             if col in frame.columns:
                 exprs.append(
-                    pl.col(col).cast(pl.Float64, strict=False).fill_null(0.0).alias(col)
+                    pl.col(col)
+                    .cast(pl.Utf8, strict=False)
+                    .str.strip_chars()
+                    .cast(pl.Float64, strict=False)
+                    .fill_null(0.0)
+                    .alias(col)
                 )
 
         for col in self.categorical_columns:

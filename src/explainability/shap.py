@@ -129,10 +129,25 @@ class ShapExplainer:
         x: np.ndarray,
         batch_size: int = 100,
         feature_names: list[str] | None = None,
+        instance_ids: list[int] | np.ndarray | None = None,
     ) -> pl.DataFrame:
         """Compute long-form SHAP records suitable for DuckDB storage."""
         names = feature_names or self.feature_names
         x = np.asarray(x)
+
+        if instance_ids is None:
+            ids = np.arange(len(x), dtype=int)
+        else:
+            ids = np.asarray(
+                instance_ids,
+                dtype=int,
+            )
+
+            if ids.ndim != 1:
+                raise ValueError("instance_ids must be one-dimensional.")
+
+            if len(ids) != len(x):
+                raise ValueError("instance_ids length must match x rows.")
 
         all_results: list[dict[str, Any]] = []
 
@@ -154,7 +169,7 @@ class ShapExplainer:
             values = result["shap_values"]
 
             for row_offset, row in enumerate(batch):
-                instance_id = start + row_offset
+                instance_id = int(ids[start + row_offset])
                 for feature_idx, feature in enumerate(names):
                     all_results.append(
                         {

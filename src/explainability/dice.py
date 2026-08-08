@@ -277,18 +277,38 @@ class DiceExplainer:
         desired_class: str | int = "opposite",
         features_to_vary: str | list[str] = "all",
         random_seed: int = 42,
+        selected_indices: list[int] | np.ndarray | None = None,
     ) -> pl.DataFrame:
         """Generate semantic counterfactual records for multiple raw test rows."""
         if not isinstance(x_test, pl.DataFrame):
             raise TypeError("x_test must be a raw Polars DataFrame.")
 
-        rng = np.random.default_rng(random_seed)
-        count = min(num_samples, x_test.height)
+        if selected_indices is not None:
+            selected = np.asarray(
+                selected_indices,
+                dtype=int,
+            )
 
-        if x_test.height > count:
-            selected = np.sort(rng.choice(x_test.height, count, replace=False))
+            if selected.ndim != 1:
+                raise ValueError("selected_indices must be one-dimensional.")
+
+            if np.any(selected < 0) or np.any(selected >= x_test.height):
+                raise ValueError("selected_indices contains an invalid row index.")
+
         else:
-            selected = np.arange(x_test.height)
+            rng = np.random.default_rng(random_seed)
+            count = min(num_samples, x_test.height)
+
+            if x_test.height > count:
+                selected = np.sort(
+                    rng.choice(
+                        x_test.height,
+                        count,
+                        replace=False,
+                    )
+                )
+            else:
+                selected = np.arange(x_test.height)
 
         results: list[dict[str, Any]] = []
         logger.info("Generating counterfactuals for %d instances...", len(selected))
