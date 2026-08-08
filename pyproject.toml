@@ -12,40 +12,31 @@ dependencies = [
     "scikit-learn>=1.3.0",
     "xgboost>=2.0.0",
     "lightgbm>=4.0.0",
-
     # XAI
     "dice-ml>=0.9",
     "shap>=0.45.0",
     "numba==0.63.1",
     "llvmlite==0.46.0",
-
     # Data Engineering
     "polars>=0.20.0",
     "duckdb>=0.9.0",
     "pyarrow>=14.0.0",
-
     # Experiment Tracking
     "mlflow>=2.8.0",
-
     # Hyperparameter Optimization
     "optuna>=3.3.0",
-
     # Configuration
     "hydra-core>=1.3.0",
     "omegaconf>=2.3.0",
-
     # Dashboard
     "streamlit>=1.28.0",
-
     # Visualization
     "plotly>=5.17.0",
     "matplotlib>=3.7.0",
     "seaborn>=0.12.0",
-
     # Utilities
     "numpy>=1.24.0",
     "pandas>=2.0.0",  # For compatibility with some libraries
-
     # Database
     "sqlalchemy>=2.0.0",
 ]

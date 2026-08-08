@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import random
 import sys
+from datetime import datetime
 from pathlib import Path
 
 import hydra
@@ -63,9 +64,14 @@ def main(cfg: DictConfig) -> None:
     logger.info("Encoded feature count: %d", x_train_fe.width)
 
     model_name = cfg.model._class_.split(".")[-1]
-    run_id = cfg.mlflow.get("run_id", None)
 
-    if run_id:
+    provided_run_id = cfg.mlflow.get("run_id")
+
+    run_id = (
+        provided_run_id if provided_run_id else f"local-{datetime.now():%Y%m%d-%H%M%S}"
+    )
+
+    if provided_run_id:
         logger.info("Loading model from MLflow run %s", run_id)
         model = mlflow.sklearn.load_model(f"runs:/{run_id}/model")  # type: ignore
     else:
