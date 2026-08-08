@@ -72,6 +72,29 @@ class FeatureEngineeringModelAdapter:
 class DiceExplainer:
     """Generate human-readable counterfactuals in the original Adult feature space."""
 
+    DEFAULT_FEATURES_TO_VARY = [
+        "workclass",
+        "education",
+        "occupation",
+        "capital_gain",
+        "capital_loss",
+        "hours_per_week",
+    ]
+
+    IMMUTABLE_FEATURES = [
+        "race",
+        "sex",
+        "native_country",
+    ]
+
+    NON_ACTIONABLE_FEATURES = [
+        "fnlwgt",
+        "education_num",
+        "age",
+        "marital_status",
+        "relationship",
+    ]
+
     def __init__(
         self,
         model: Any,
@@ -157,6 +180,9 @@ class DiceExplainer:
         )
 
         self._ranges = self._continuous_ranges(self.raw_data)
+
+        self._bounds = self._continuous_bounds(self.raw_data)
+
         logger.info(
             "DiCE explainer initialized in raw feature space (%s method)",
             self.method,
@@ -172,6 +198,55 @@ class DiceExplainer:
                 ranges[col] = 1.0
             else:
                 ranges[col] = max(float(maximum) - float(minimum), 1.0)
+        return ranges
+
+    def _continuous_bounds(
+        self,
+        df: pl.DataFrame,
+    ) -> dict[str, list[float]]:
+        """Return observed training bounds for continuous features."""
+        bounds: dict[str, list[float]] = {}
+
+        for col in self.continuous_features:
+            if col not in df.columns:
+                continue
+
+            series = df[col].cast(
+                pl.Float64,
+                strict=False,
+            )
+
+            minimum = series.min()
+            maximum = series.max()
+
+            if minimum is None or maximum is None:
+                continue
+
+            bounds[col] = [
+                float(minimum),
+                float(maximum),
+            ]
+
+        return bounds
+
+    def _default_permitted_range(
+        self,
+    ) -> dict[str, list[float]]:
+        """Return practical ranges for actionable continuous features."""
+        ranges: dict[str, list[float]] = {}
+
+        if "hours_per_week" in self._bounds:
+            ranges["hours_per_week"] = [
+                1.0,
+                60.0,
+            ]
+
+        if "capital_gain" in self._bounds:
+            ranges["capital_gain"] = self._bounds["capital_gain"]
+
+        if "capital_loss" in self._bounds:
+            ranges["capital_loss"] = self._bounds["capital_loss"]
+
         return ranges
 
     @staticmethod
@@ -215,7 +290,8 @@ class DiceExplainer:
         query_instance: pl.DataFrame | pd.DataFrame | dict[str, Any],
         total_cfs: int = 5,
         desired_class: str | int = "opposite",
-        features_to_vary: str | list[str] = "all",
+        features_to_vary: str | list[str] | None = None,
+        permitted_range: dict[str, list[float]] | None = None,
         random_seed: int | None = None,
     ) -> dict[str, Any]:
         """Generate counterfactuals for one raw-feature query instance."""
@@ -234,11 +310,23 @@ class DiceExplainer:
         if len(query_df) != 1:
             raise ValueError("generate_counterfactuals expects exactly one row.")
 
+        if features_to_vary is None:
+            features_to_vary = [
+                feature
+                for feature in self.DEFAULT_FEATURES_TO_VARY
+                if feature in self.raw_columns
+            ]
+
+        if permitted_range is None:
+            permitted_range = self._default_permitted_range()
+
         kwargs: dict[str, Any] = {
             "total_CFs": total_cfs,
             "desired_class": desired_class,
             "features_to_vary": features_to_vary,
+            "permitted_range": permitted_range,
         }
+
         if random_seed is not None and self.method == "random":
             kwargs["random_seed"] = random_seed
 
@@ -254,6 +342,19 @@ class DiceExplainer:
 
             cf_df = cf_df[self.raw_columns].reset_index(drop=True)
             original = query_df.iloc[0]
+
+            valid_rows = [
+                self._validate_counterfactual(
+                    original,
+                    cf_df.iloc[i],
+                )
+                for i in range(len(cf_df))
+            ]
+
+            cf_df = cf_df.loc[valid_rows].reset_index(drop=True)
+
+            if cf_df.empty:
+                return {"error": "DiCE returned no feasible counterfactuals."}
 
             distances = [
                 self._mixed_distance(original, cf_df.iloc[i]) for i in range(len(cf_df))
@@ -275,7 +376,8 @@ class DiceExplainer:
         num_samples: int = 100,
         total_cfs: int = 5,
         desired_class: str | int = "opposite",
-        features_to_vary: str | list[str] = "all",
+        features_to_vary: str | list[str] | None = None,
+        permitted_range: dict[str, list[float]] | None = None,
         random_seed: int = 42,
         selected_indices: list[int] | np.ndarray | None = None,
     ) -> pl.DataFrame:
@@ -325,6 +427,7 @@ class DiceExplainer:
                 total_cfs=total_cfs,
                 desired_class=desired_class,
                 features_to_vary=features_to_vary,
+                permitted_range=permitted_range,
                 random_seed=random_seed + int(row_index),
             )
 
@@ -376,6 +479,35 @@ class DiceExplainer:
         df = pl.DataFrame(results)
         logger.info("Generated %d counterfactuals", df.height)
         return df
+
+    def _validate_counterfactual(
+        self,
+        original: pd.Series,
+        counterfactual: pd.Series,
+    ) -> bool:
+        """Validate that a generated counterfactual respects feasibility rules."""
+
+        frozen_features = self.IMMUTABLE_FEATURES + self.NON_ACTIONABLE_FEATURES
+
+        for feature in frozen_features:
+            if (
+                feature in original.index
+                and feature in counterfactual.index
+                and original[feature] != counterfactual[feature]
+            ):
+                return False
+
+        for feature, bounds in self._default_permitted_range().items():
+            if feature not in counterfactual.index:
+                continue
+
+            value = float(counterfactual[feature])
+            lower, upper = bounds
+
+            if value < lower or value > upper:
+                return False
+
+        return True
 
     def _sanitize_pandas(self, df: pd.DataFrame) -> pd.DataFrame:
         """Normalize raw feature dtypes and remove missing values for DiCE."""
