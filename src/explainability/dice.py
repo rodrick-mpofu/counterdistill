@@ -15,6 +15,41 @@ from src.features.feature_engineering import FeatureEngineer
 
 logger = logging.getLogger(__name__)
 
+EDUCATION_NUM_MAP: dict[str, float] = {
+    "Preschool": 1.0,
+    "1st-4th": 2.0,
+    "5th-6th": 3.0,
+    "7th-8th": 4.0,
+    "9th": 5.0,
+    "10th": 6.0,
+    "11th": 7.0,
+    "12th": 8.0,
+    "HS-grad": 9.0,
+    "Some-college": 10.0,
+    "Assoc-voc": 11.0,
+    "Assoc-acdm": 12.0,
+    "Bachelors": 13.0,
+    "Masters": 14.0,
+    "Prof-school": 15.0,
+    "Doctorate": 16.0,
+}
+
+
+def reconcile_feature_dependencies(
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Reconcile raw features that have deterministic dependencies."""
+    reconciled = df.copy()
+
+    if "education" in reconciled.columns and "education_num" in reconciled.columns:
+        mapped = reconciled["education"].map(EDUCATION_NUM_MAP)
+
+        reconciled["education_num"] = mapped.fillna(reconciled["education_num"]).astype(
+            np.float64
+        )
+
+    return reconciled
+
 
 class FeatureEngineeringModelAdapter:
     """Expose a raw-feature sklearn-like interface to an encoded-feature model."""
@@ -50,6 +85,8 @@ class FeatureEngineeringModelAdapter:
         for col in self.feature_engineer.categorical_columns:
             if col in df.columns:
                 df[col] = df[col].fillna("Unknown").astype(str)
+
+        df = reconcile_feature_dependencies(df)
 
         return pl.from_pandas(df)
 
@@ -89,10 +126,13 @@ class DiceExplainer:
 
     NON_ACTIONABLE_FEATURES = [
         "fnlwgt",
-        "education_num",
         "age",
         "marital_status",
         "relationship",
+    ]
+
+    DEPENDENT_FEATURES = [
+        "education_num",
     ]
 
     def __init__(
@@ -269,6 +309,8 @@ class DiceExplainer:
         distances: list[float] = []
 
         for col in self.continuous_features:
+            if col in self.DEPENDENT_FEATURES:
+                continue
             if col not in original.index or col not in counterfactual.index:
                 continue
             try:
@@ -341,6 +383,11 @@ class DiceExplainer:
                 cf_df = cf_df.drop(columns=[self.target])
 
             cf_df = cf_df[self.raw_columns].reset_index(drop=True)
+
+            cf_df = reconcile_feature_dependencies(cf_df)
+
+            query_df = reconcile_feature_dependencies(query_df)
+
             original = query_df.iloc[0]
 
             valid_rows = [
@@ -496,6 +543,21 @@ class DiceExplainer:
                 and original[feature] != counterfactual[feature]
             ):
                 return False
+
+        # Validate deterministic education dependency.
+        if (
+            "education" in counterfactual.index
+            and "education_num" in counterfactual.index
+        ):
+            education = str(counterfactual["education"])
+
+            expected_num = EDUCATION_NUM_MAP.get(education)
+
+            if expected_num is not None:
+                actual_num = float(counterfactual["education_num"])
+
+                if actual_num != expected_num:
+                    return False
 
         for feature, bounds in self._default_permitted_range().items():
             if feature not in counterfactual.index:
