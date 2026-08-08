@@ -1,4 +1,6 @@
-"""Feature engineering module using Polars with configuration-driven design."""
+"""Feature engineering module using Polars with fitted train-only state."""
+
+from __future__ import annotations
 
 import logging
 from typing import Any
@@ -10,37 +12,31 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureEngineer:
-    """
-    Feature engineering pipeline using Polars with vectorized operations.
+    """Train-aware Polars feature engineering pipeline.
 
-    This class follows modern Polars patterns:
-    - Single expression graphs for each transformation
-    - Minimal DataFrame copying
-    - Fail-fast error handling
-    - Configuration-driven design
+    The engineer learns all state from the training split only:
+    - output dummy-column schema
+    - optional scaling statistics
+
+    Calling ``transform`` on validation/test/counterfactual data then aligns the
+    output to exactly the feature order learned during ``fit``.
     """
 
     def __init__(
         self,
-        df: pl.DataFrame,
-        config: DictConfig | None = None,
-    ):
-        """
-        Initialize the feature engineer.
-
-        Args:
-            df: Input Polars DataFrame
-            config: Hydra configuration for feature engineering
-        """
+        df: pl.DataFrame | None = None,
+        config: DictConfig | dict[str, Any] | None = None,
+    ) -> None:
         self.df = df
-        self.config = config
+        self.config = config if config is not None else self._get_default_config()
 
-        # Default configuration if not provided
-        if self.config is None:
-            self.config = self._get_default_config()
+        self.feature_names_: list[str] = []
+        self.scale_stats_: dict[str, tuple[float, float]] = {}
+        self.scale_: bool = False
+        self.is_fitted_: bool = False
 
-    def _get_default_config(self) -> dict[str, Any]:
-        """Get default configuration for feature engineering."""
+    @staticmethod
+    def _get_default_config() -> dict[str, Any]:
         return {
             "numeric_columns": [
                 "age",
@@ -91,80 +87,88 @@ class FeatureEngineer:
             "scale_features": False,
         }
 
-    def clean_data(self) -> pl.DataFrame:
-        """
-        Clean numeric and categorical columns in one vectorized operation.
+    def _get(self, key: str, default: Any) -> Any:
+        if isinstance(self.config, DictConfig):
+            return self.config.get(key, default)
+        return self.config.get(key, default)
 
-        Returns:
-            Cleaned Polars DataFrame
-        """
-        numeric_cols = self.config.get("numeric_columns", [])  # type: ignore
-        categorical_cols = self.config.get("categorical_columns", [])  # type: ignore
+    def _resolve_df(self, df: pl.DataFrame | None) -> pl.DataFrame:
+        resolved = df if df is not None else self.df
+        if resolved is None:
+            raise ValueError("No DataFrame provided to FeatureEngineer.")
+        return resolved
 
-        # Build cleaning expressions
-        clean_exprs = []
+    @property
+    def numeric_columns(self) -> list[str]:
+        return list(self._get("numeric_columns", []))
 
-        # Clean numeric columns
-        for col in numeric_cols:
-            if col in self.df.columns:
-                clean_exprs.append(
-                    pl.col(col).cast(pl.Float64, strict=False).fill_null(0).alias(col)
+    @property
+    def categorical_columns(self) -> list[str]:
+        return list(self._get("categorical_columns", []))
+
+    @property
+    def raw_feature_names(self) -> list[str]:
+        return self.numeric_columns + self.categorical_columns
+
+    def clean_data(self, df: pl.DataFrame | None = None) -> pl.DataFrame:
+        """Clean numeric and categorical columns using vectorized expressions."""
+        frame = self._resolve_df(df)
+        exprs: list[pl.Expr] = []
+
+        for col in self.numeric_columns:
+            if col in frame.columns:
+                exprs.append(
+                    pl.col(col).cast(pl.Float64, strict=False).fill_null(0.0).alias(col)
                 )
 
-        # Clean categorical columns
-        for col in categorical_cols:
-            if col in self.df.columns:
-                clean_exprs.append(
-                    pl.col(col).cast(pl.Utf8).str.strip_chars().alias(col)
+        for col in self.categorical_columns:
+            if col in frame.columns:
+                exprs.append(
+                    pl.col(col)
+                    .cast(pl.Utf8)
+                    .str.strip_chars()
+                    .fill_null("Unknown")
+                    .alias(col)
                 )
 
-        # Execute all cleaning in one with_columns call
-        return self.df.with_columns(clean_exprs)
+        return frame.with_columns(exprs) if exprs else frame
 
     def create_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        """
-        Create new features using vectorized expressions.
+        """Create deterministic derived features."""
+        feature_exprs: list[pl.Expr] = []
 
-        Args:
-            df: Input DataFrame to add features to
-
-        Returns:
-            DataFrame with new features added
-        """
-        # Build feature expressions
-        feature_exprs = []
-
-        # Age group expression
-        age_bins = self.config.get("age_bins", [18, 25, 35, 45, 55, 65])  # type: ignore
-        age_labels = self.config.get(  # type: ignore
-            "age_labels",
-            [
-                "child",
-                "teen",
-                "young",
-                "young_adult",
-                "middle_age",
-                "senior",
-                "elderly",
-            ],
+        age_bins = list(self._get("age_bins", [18, 25, 35, 45, 55, 65]))
+        age_labels = list(
+            self._get(
+                "age_labels",
+                [
+                    "child",
+                    "teen",
+                    "young",
+                    "young_adult",
+                    "middle_age",
+                    "senior",
+                    "elderly",
+                ],
+            )
         )
-
         if "age" in df.columns:
             age_expr = pl.when(pl.col("age") <= age_bins[0]).then(pl.lit(age_labels[0]))
             for i in range(len(age_bins) - 1):
                 age_expr = age_expr.when(
                     (pl.col("age") > age_bins[i]) & (pl.col("age") <= age_bins[i + 1])
                 ).then(pl.lit(age_labels[i + 1]))
-            age_expr = age_expr.otherwise(pl.lit(age_labels[-1])).alias("age_group")
-            feature_exprs.append(age_expr)
+            feature_exprs.append(
+                age_expr.otherwise(pl.lit(age_labels[-1])).alias("age_group")
+            )
 
-        # Hours category expression
-        hours_bins = self.config.get("hours_bins", [0, 20, 30, 40, 50])  # type: ignore
-        hours_labels = self.config.get(  # type: ignore
-            "hours_labels",
-            ["none", "part_time", "reduced", "full_time", "overtime", "extreme"],
+        hours_bins = list(self._get("hours_bins", [0, 20, 30, 40, 50]))
+        hours_labels = list(
+            self._get(
+                "hours_labels",
+                ["none", "part_time", "reduced", "full_time", "overtime", "extreme"],
+            )
         )
-
         if "hours_per_week" in df.columns:
             hours_expr = pl.when(pl.col("hours_per_week") <= hours_bins[0]).then(
                 pl.lit(hours_labels[0])
@@ -174,18 +178,24 @@ class FeatureEngineer:
                     (pl.col("hours_per_week") > hours_bins[i])
                     & (pl.col("hours_per_week") <= hours_bins[i + 1])
                 ).then(pl.lit(hours_labels[i + 1]))
-            hours_expr = hours_expr.otherwise(pl.lit(hours_labels[-1])).alias(
-                "hours_category"
+            feature_exprs.append(
+                hours_expr.otherwise(pl.lit(hours_labels[-1])).alias("hours_category")
             )
-            feature_exprs.append(hours_expr)
 
-        # Education level expression
-        edu_bins = self.config.get("education_bins", [0, 6, 10, 12, 14])  # type: ignore
-        edu_labels = self.config.get(  # type: ignore
-            "education_labels",
-            ["no_edu", "basic", "high_school", "some_college", "bachelor", "advanced"],
+        edu_bins = list(self._get("education_bins", [0, 6, 10, 12, 14]))
+        edu_labels = list(
+            self._get(
+                "education_labels",
+                [
+                    "no_edu",
+                    "basic",
+                    "high_school",
+                    "some_college",
+                    "bachelor",
+                    "advanced",
+                ],
+            )
         )
-
         if "education_num" in df.columns:
             edu_expr = pl.when(pl.col("education_num") <= edu_bins[0]).then(
                 pl.lit(edu_labels[0])
@@ -195,30 +205,27 @@ class FeatureEngineer:
                     (pl.col("education_num") > edu_bins[i])
                     & (pl.col("education_num") <= edu_bins[i + 1])
                 ).then(pl.lit(edu_labels[i + 1]))
-            edu_expr = edu_expr.otherwise(pl.lit(edu_labels[-1])).alias(
-                "education_level"
+            feature_exprs.append(
+                edu_expr.otherwise(pl.lit(edu_labels[-1])).alias("education_level")
             )
-            feature_exprs.append(edu_expr)
 
-        # Capital ratio expression
-        if all(col in df.columns for col in ["capital_gain", "capital_loss", "fnlwgt"]):
-            capital_expr = (
+        if all(c in df.columns for c in ("capital_gain", "capital_loss", "fnlwgt")):
+            feature_exprs.append(
                 (
                     (pl.col("capital_gain") - pl.col("capital_loss"))
-                    / (pl.col("fnlwgt") + 1)
+                    / (pl.col("fnlwgt") + 1.0)
                 )
-                .fill_null(0)
+                .fill_nan(0.0)
+                .fill_null(0.0)
                 .cast(pl.Float64)
                 .alias("capital_ratio")
             )
-            feature_exprs.append(capital_expr)
 
-        # Execute all feature creation in one with_columns call
-        return df.with_columns(feature_exprs)
+        return df.with_columns(feature_exprs) if feature_exprs else df
 
-    def encode_categorical(self, df: pl.DataFrame) -> pl.DataFrame:
-        """One-hot encode categorical features using Polars."""
-        cat_cols = [
+    @staticmethod
+    def _categorical_features_present(df: pl.DataFrame) -> list[str]:
+        candidates = [
             "workclass",
             "education",
             "marital_status",
@@ -231,94 +238,137 @@ class FeatureEngineer:
             "hours_category",
             "education_level",
         ]
+        return [col for col in candidates if col in df.columns]
 
-        existing_cols = [c for c in cat_cols if c in df.columns]
-
-        if not existing_cols:
+    def encode_categorical(self, df: pl.DataFrame) -> pl.DataFrame:
+        """One-hot encode all categorical and derived categorical features."""
+        existing = self._categorical_features_present(df)
+        if not existing:
             return df
 
-        # Clean string columns
-        df = df.with_columns(
-            [pl.col(c).cast(pl.Utf8).str.strip_chars().alias(c) for c in existing_cols]
+        cleaned = df.with_columns(
+            [
+                pl.col(col)
+                .cast(pl.Utf8)
+                .str.strip_chars()
+                .fill_null("Unknown")
+                .alias(col)
+                for col in existing
+            ]
         )
-
-        # One-hot encode all categorical columns at once
-        df = df.to_dummies(
-            columns=existing_cols,
+        return cleaned.to_dummies(
+            columns=existing,
             separator="_",
             drop_first=False,
         )
 
-        return df
+    def _fit_scale_stats(self, df: pl.DataFrame) -> None:
+        self.scale_stats_.clear()
+        columns = self.numeric_columns + ["capital_ratio"]
 
-    def scale_features(self, df: pl.DataFrame) -> pl.DataFrame:
-        """
-        Scale numerical features using standardization.
-
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            DataFrame with scaled features
-        """
-        numeric_cols = self.config.get("numeric_columns", [])  # type: ignore
-        numeric_cols.append("capital_ratio")
-
-        # Collect all scaling expressions
-        scale_exprs = []
-        drop_cols = []
-
-        for col in numeric_cols:
+        for col in columns:
             if col not in df.columns:
                 continue
 
-            # Compute mean and std
             mean = df[col].mean()
             std = df[col].std()
+            if mean is None or std is None or std <= 0:
+                continue
 
-            if std is not None and std > 0:
-                scale_exprs.append(
-                    ((pl.col(col) - mean) / std).fill_null(0).alias(f"{col}_scaled")
-                )
-                drop_cols.append(col)
+            self.scale_stats_[col] = (float(mean), float(std))
 
-        # Apply scaling
-        if scale_exprs:
-            df = df.with_columns(scale_exprs)
-            if drop_cols:
-                df = df.drop(drop_cols)
+    def scale_features(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Apply scaling statistics learned by ``fit``."""
+        if not self.scale_stats_:
+            return df
 
+        exprs = [
+            ((pl.col(col) - mean) / std)
+            .fill_nan(0.0)
+            .fill_null(0.0)
+            .alias(f"{col}_scaled")
+            for col, (mean, std) in self.scale_stats_.items()
+            if col in df.columns
+        ]
+        drop_cols = [col for col in self.scale_stats_ if col in df.columns]
+
+        if exprs:
+            df = df.with_columns(exprs)
+        if drop_cols:
+            df = df.drop(drop_cols)
         return df
+
+    def _prepare_before_encoding(self, df: pl.DataFrame) -> pl.DataFrame:
+        prepared = self.clean_data(df)
+        prepared = self.create_features(prepared)
+        if self.scale_:
+            prepared = self.scale_features(prepared)
+        return prepared
+
+    def fit(
+        self,
+        df: pl.DataFrame | None = None,
+        scale: bool | None = None,
+    ) -> FeatureEngineer:
+        """Learn preprocessing state from training data only."""
+        frame = self._resolve_df(df)
+        self.scale_ = bool(
+            self._get("scale_features", False) if scale is None else scale
+        )
+
+        prepared = self.clean_data(frame)
+        prepared = self.create_features(prepared)
+
+        if self.scale_:
+            self._fit_scale_stats(prepared)
+            prepared = self.scale_features(prepared)
+        else:
+            self.scale_stats_.clear()
+
+        encoded = self.encode_categorical(prepared)
+        self.feature_names_ = encoded.columns
+        self.is_fitted_ = True
+
+        logger.info(
+            "FeatureEngineer fitted on %d rows with %d output features",
+            frame.height,
+            len(self.feature_names_),
+        )
+        return self
+
+    def transform(self, df: pl.DataFrame) -> pl.DataFrame:
+        """Transform data and align it to the fitted training feature schema."""
+        if not self.is_fitted_:
+            raise RuntimeError("FeatureEngineer must be fitted before transform().")
+
+        encoded = self.encode_categorical(self._prepare_before_encoding(df))
+
+        missing = [col for col in self.feature_names_ if col not in encoded.columns]
+        if missing:
+            encoded = encoded.with_columns(
+                [pl.lit(0, dtype=pl.UInt8).alias(col) for col in missing]
+            )
+
+        extra = [col for col in encoded.columns if col not in self.feature_names_]
+        if extra:
+            logger.debug("Dropping unseen encoded columns: %s", extra)
+            encoded = encoded.drop(extra)
+
+        return encoded.select(self.feature_names_)
+
+    def fit_transform(
+        self,
+        df: pl.DataFrame | None = None,
+        scale: bool | None = None,
+    ) -> pl.DataFrame:
+        """Fit on the supplied training data and transform it."""
+        frame = self._resolve_df(df)
+        self.fit(frame, scale=scale)
+        return self.transform(frame)
 
     def build_pipeline(self, scale: bool | None = None) -> pl.DataFrame:
-        """
-        Build complete feature engineering pipeline.
-
-        This method orchestrates all transformations in the optimal order:
-        1. Clean data
-        2. Create new features
-        3. Encode categorical variables
-        4. Scale numerical features (optional)
-
-        Args:
-            scale: Whether to scale numerical features (overrides config)
-
-        Returns:
-            Fully processed Polars DataFrame
-        """
-        logger.info("Building feature engineering pipeline...")
-
-        # Determine if scaling should be applied
-        if scale is None:
-            scale = self.config.get("scale_features", False)  # type: ignore
-
-        # Chain transformations with minimal DataFrame copies
-        df = self.clean_data()
-        df = self.create_features(df)
-        df = self.encode_categorical(df)
-
-        if scale:
-            df = self.scale_features(df)
-
-        logger.info(f"Feature engineering complete: {df.width} features")
-        return df
+        """Backward-compatible entry point for the full pipeline."""
+        frame = self._resolve_df(None)
+        if self.is_fitted_:
+            return self.transform(frame)
+        return self.fit_transform(frame, scale=scale)
