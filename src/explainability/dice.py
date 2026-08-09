@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 import dice_ml
 import numpy as np
@@ -242,12 +242,12 @@ class DiceExplainer:
         ranges: dict[str, float] = {}
         for col in self.continuous_features:
             series = df[col].cast(pl.Float64, strict=False)
-            minimum = series.min()
-            maximum = series.max()
+            minimum = cast(float | None, series.min())
+            maximum = cast(float | None, series.max())
             if minimum is None or maximum is None:
                 ranges[col] = 1.0
             else:
-                ranges[col] = max(float(maximum) - float(minimum), 1.0)
+                ranges[col] = max(maximum - minimum, 1.0)
         return ranges
 
     def _continuous_bounds(
@@ -266,15 +266,15 @@ class DiceExplainer:
                 strict=False,
             )
 
-            minimum = series.min()
-            maximum = series.max()
+            minimum = cast(float | None, series.min())
+            maximum = cast(float | None, series.max())
 
             if minimum is None or maximum is None:
                 continue
 
             bounds[col] = [
-                float(minimum),
-                float(maximum),
+                minimum,
+                maximum,
             ]
 
         return bounds

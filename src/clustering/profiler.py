@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import cast
 
 import polars as pl
 
@@ -90,14 +91,25 @@ class CounterfactualClusterProfiler:
         size = cluster_df.height
 
         if "distance" in cluster_df.columns:
-            avg_distance = float(cluster_df["distance"].mean())
+            avg_distance_value = cast(
+                float | None,
+                cluster_df["distance"].mean(),
+            )
+            avg_distance = (
+                avg_distance_value if avg_distance_value is not None else float("nan")
+            )
         else:
             avg_distance = float("nan")
 
         change_rates: dict[str, float] = {}
 
         for column in self._change_columns(cluster_df):
-            rate = float(cluster_df[column].mean())
+            rate_value = cast(
+                float | None,
+                cluster_df[column].mean(),
+            )
+
+            rate = rate_value if rate_value is not None else 0.0
 
             feature = column.removesuffix("__changed")
 
@@ -106,7 +118,12 @@ class CounterfactualClusterProfiler:
         avg_numeric_deltas: dict[str, float] = {}
 
         for column in self._delta_columns(cluster_df):
-            value = float(cluster_df[column].mean())
+            value_result = cast(
+                float | None,
+                cluster_df[column].mean(),
+            )
+
+            value = value_result if value_result is not None else 0.0
 
             feature = column.removesuffix("__delta")
 
@@ -115,7 +132,12 @@ class CounterfactualClusterProfiler:
         transitions: list[tuple[str, float]] = []
 
         for column in self._transition_columns(cluster_df):
-            rate = float(cluster_df[column].mean())
+            rate_value = cast(
+                float | None,
+                cluster_df[column].mean(),
+            )
+
+            rate = rate_value if rate_value is not None else 0.0
 
             if rate > 0:
                 transitions.append((column, rate))

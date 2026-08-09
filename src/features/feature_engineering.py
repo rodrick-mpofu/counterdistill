@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import polars as pl
 from omegaconf import DictConfig
@@ -158,14 +158,24 @@ class FeatureEngineer:
             )
         )
         if "age" in df.columns:
-            age_expr = pl.when(pl.col("age") <= age_bins[0]).then(pl.lit(age_labels[0]))
-            for i in range(len(age_bins) - 1):
-                age_expr = age_expr.when(
-                    (pl.col("age") > age_bins[i]) & (pl.col("age") <= age_bins[i + 1])
-                ).then(pl.lit(age_labels[i + 1]))
-            feature_exprs.append(
-                age_expr.otherwise(pl.lit(age_labels[-1])).alias("age_group")
+            age_expr = (
+                pl.when(pl.col("age") <= age_bins[0])
+                .then(pl.lit(age_labels[0]))
+                .when((pl.col("age") > age_bins[0]) & (pl.col("age") <= age_bins[1]))
+                .then(pl.lit(age_labels[1]))
+                .when((pl.col("age") > age_bins[1]) & (pl.col("age") <= age_bins[2]))
+                .then(pl.lit(age_labels[2]))
+                .when((pl.col("age") > age_bins[2]) & (pl.col("age") <= age_bins[3]))
+                .then(pl.lit(age_labels[3]))
+                .when((pl.col("age") > age_bins[3]) & (pl.col("age") <= age_bins[4]))
+                .then(pl.lit(age_labels[4]))
+                .when((pl.col("age") > age_bins[4]) & (pl.col("age") <= age_bins[5]))
+                .then(pl.lit(age_labels[5]))
+                .otherwise(pl.lit(age_labels[-1]))
+                .alias("age_group")
             )
+
+            feature_exprs.append(age_expr)
 
         hours_bins = list(self._get("hours_bins", [0, 20, 30, 40, 50]))
         hours_labels = list(
@@ -175,17 +185,34 @@ class FeatureEngineer:
             )
         )
         if "hours_per_week" in df.columns:
-            hours_expr = pl.when(pl.col("hours_per_week") <= hours_bins[0]).then(
-                pl.lit(hours_labels[0])
+            hours_expr = (
+                pl.when(pl.col("hours_per_week") <= hours_bins[0])
+                .then(pl.lit(hours_labels[0]))
+                .when(
+                    (pl.col("hours_per_week") > hours_bins[0])
+                    & (pl.col("hours_per_week") <= hours_bins[1])
+                )
+                .then(pl.lit(hours_labels[1]))
+                .when(
+                    (pl.col("hours_per_week") > hours_bins[1])
+                    & (pl.col("hours_per_week") <= hours_bins[2])
+                )
+                .then(pl.lit(hours_labels[2]))
+                .when(
+                    (pl.col("hours_per_week") > hours_bins[2])
+                    & (pl.col("hours_per_week") <= hours_bins[3])
+                )
+                .then(pl.lit(hours_labels[3]))
+                .when(
+                    (pl.col("hours_per_week") > hours_bins[3])
+                    & (pl.col("hours_per_week") <= hours_bins[4])
+                )
+                .then(pl.lit(hours_labels[4]))
+                .otherwise(pl.lit(hours_labels[-1]))
+                .alias("hours_category")
             )
-            for i in range(len(hours_bins) - 1):
-                hours_expr = hours_expr.when(
-                    (pl.col("hours_per_week") > hours_bins[i])
-                    & (pl.col("hours_per_week") <= hours_bins[i + 1])
-                ).then(pl.lit(hours_labels[i + 1]))
-            feature_exprs.append(
-                hours_expr.otherwise(pl.lit(hours_labels[-1])).alias("hours_category")
-            )
+
+            feature_exprs.append(hours_expr)
 
         edu_bins = list(self._get("education_bins", [0, 6, 10, 12, 14]))
         edu_labels = list(
@@ -202,17 +229,34 @@ class FeatureEngineer:
             )
         )
         if "education_num" in df.columns:
-            edu_expr = pl.when(pl.col("education_num") <= edu_bins[0]).then(
-                pl.lit(edu_labels[0])
+            edu_expr = (
+                pl.when(pl.col("education_num") <= edu_bins[0])
+                .then(pl.lit(edu_labels[0]))
+                .when(
+                    (pl.col("education_num") > edu_bins[0])
+                    & (pl.col("education_num") <= edu_bins[1])
+                )
+                .then(pl.lit(edu_labels[1]))
+                .when(
+                    (pl.col("education_num") > edu_bins[1])
+                    & (pl.col("education_num") <= edu_bins[2])
+                )
+                .then(pl.lit(edu_labels[2]))
+                .when(
+                    (pl.col("education_num") > edu_bins[2])
+                    & (pl.col("education_num") <= edu_bins[3])
+                )
+                .then(pl.lit(edu_labels[3]))
+                .when(
+                    (pl.col("education_num") > edu_bins[3])
+                    & (pl.col("education_num") <= edu_bins[4])
+                )
+                .then(pl.lit(edu_labels[4]))
+                .otherwise(pl.lit(edu_labels[-1]))
+                .alias("education_level")
             )
-            for i in range(len(edu_bins) - 1):
-                edu_expr = edu_expr.when(
-                    (pl.col("education_num") > edu_bins[i])
-                    & (pl.col("education_num") <= edu_bins[i + 1])
-                ).then(pl.lit(edu_labels[i + 1]))
-            feature_exprs.append(
-                edu_expr.otherwise(pl.lit(edu_labels[-1])).alias("education_level")
-            )
+
+            feature_exprs.append(edu_expr)
 
         if all(c in df.columns for c in ("capital_gain", "capital_loss", "fnlwgt")):
             feature_exprs.append(
@@ -275,12 +319,13 @@ class FeatureEngineer:
             if col not in df.columns:
                 continue
 
-            mean = df[col].mean()
-            std = df[col].std()
+            mean = cast(float | None, df[col].mean())
+            std = cast(float | None, df[col].std())
+
             if mean is None or std is None or std <= 0:
                 continue
 
-            self.scale_stats_[col] = (float(mean), float(std))
+            self.scale_stats_[col] = (mean, std)
 
     def scale_features(self, df: pl.DataFrame) -> pl.DataFrame:
         """Apply scaling statistics learned by ``fit``."""
