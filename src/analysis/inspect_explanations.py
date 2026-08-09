@@ -97,7 +97,7 @@ def print_counterfactuals(
                 original_value,
                 counterfactual_value,
             ) in changes.items():
-                print(f"  {feature}: " f"{original_value} -> {counterfactual_value}")
+                print(f"  {feature}: {original_value} -> {counterfactual_value}")
 
         print("-" * 70)
 
@@ -132,7 +132,7 @@ def print_global_shap(
         rows,
         start=1,
     ):
-        print(f"{rank:>2}. " f"{feature_name:<45} " f"{mean_abs_shap:.6f}")
+        print(f"{rank:>2}. {feature_name:<45} {mean_abs_shap:.6f}")
 
 
 def print_instance_shap(

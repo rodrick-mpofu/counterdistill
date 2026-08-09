@@ -53,7 +53,7 @@ def main() -> None:
 
         print(f"Share: {profile.share:.2%}")
 
-        print(f"Average distance: " f"{profile.avg_distance:.4f}")
+        print(f"Average distance: {profile.avg_distance:.4f}")
 
         print("\nChange rates:")
 
@@ -62,7 +62,7 @@ def main() -> None:
             key=lambda item: item[1],
             reverse=True,
         ):
-            print(f"  {feature:<20} " f"{rate:.2%}")
+            print(f"  {feature:<20} {rate:.2%}")
 
         print("\nAverage normalized deltas:")
 
@@ -71,14 +71,14 @@ def main() -> None:
             key=lambda item: abs(item[1]),
             reverse=True,
         ):
-            print(f"  {feature:<20} " f"{delta:+.4f}")
+            print(f"  {feature:<20} {delta:+.4f}")
 
         print("\nTop transitions:")
 
         for transition, rate in profile.top_transitions:
             readable = profiler.format_transition(transition)
 
-            print(f"  {readable:<50} " f"{rate:.2%}")
+            print(f"  {readable:<50} {rate:.2%}")
 
 
 if __name__ == "__main__":

@@ -36,9 +36,9 @@ def main() -> None:
 
     print(f"Matrix shape: {matrix.shape}")
 
-    print(f"Silhouette score: " f"{result.silhouette:.4f}")
+    print(f"Silhouette score: {result.silhouette:.4f}")
 
-    print(f"Inertia: " f"{result.inertia:.4f}")
+    print(f"Inertia: {result.inertia:.4f}")
 
     print("\nCluster sizes:")
 

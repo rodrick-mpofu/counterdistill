@@ -56,9 +56,9 @@ def main() -> None:
         print(f"Cluster {rule.cluster_id}")
         print("=" * 60)
 
-        print(f"Support: {rule.support} " f"({rule.support_share:.2%})")
+        print(f"Support: {rule.support} ({rule.support_share:.2%})")
 
-        print(f"Average distance: " f"{rule.avg_distance:.4f}")
+        print(f"Average distance: {rule.avg_distance:.4f}")
 
         print("\nRule:")
 
@@ -66,7 +66,7 @@ def main() -> None:
             prefix = "IF" if index == 0 else "AND"
             print(f"  {prefix} {condition}")
 
-        print("  THEN model prediction reaches " "the counterfactual target class")
+        print("  THEN model prediction reaches the counterfactual target class")
 
 
 if __name__ == "__main__":

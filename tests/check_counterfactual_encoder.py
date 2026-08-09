@@ -20,7 +20,7 @@ def main() -> None:
 
     print(f"Encoded shape: {encoded.shape}")
 
-    print(f"Clustering features: " f"{len(encoder.feature_names_)}")
+    print(f"Clustering features: {len(encoder.feature_names_)}")
 
     print("\nNumeric ranges:")
 
@@ -46,9 +46,9 @@ def main() -> None:
 
     matrix = encoder.clustering_matrix(encoded)
 
-    print(f"\nClustering matrix shape: " f"{matrix.shape}")
+    print(f"\nClustering matrix shape: {matrix.shape}")
 
-    print(f"Contains NaN: " f"{bool((matrix != matrix).any())}")
+    print(f"Contains NaN: {bool((matrix != matrix).any())}")
 
 
 if __name__ == "__main__":

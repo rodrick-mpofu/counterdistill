@@ -60,7 +60,7 @@ class CounterfactualKMeans:
 
         if len(matrix) < self.n_clusters:
             raise ValueError(
-                "Number of samples must be greater than " "or equal to n_clusters."
+                "Number of samples must be greater than or equal to n_clusters."
             )
 
         labels = self.model.fit_predict(matrix)

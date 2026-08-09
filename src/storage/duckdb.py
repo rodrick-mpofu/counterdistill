@@ -138,7 +138,7 @@ class DuckDBStorage:
         # This project writes explanation batches serially. The expression keeps
         # compatibility with existing INTEGER PRIMARY KEY tables that have no
         # identity/default sequence.
-        return f"(SELECT COALESCE(MAX(id), 0) FROM {table}) " "+ ROW_NUMBER() OVER ()"
+        return f"(SELECT COALESCE(MAX(id), 0) FROM {table}) + ROW_NUMBER() OVER ()"
 
     def store_counterfactuals(
         self,
@@ -407,7 +407,7 @@ class DuckDBStorage:
 
         if missing:
             raise ValueError(
-                "Cluster DataFrame is missing required columns: " f"{sorted(missing)}"
+                f"Cluster DataFrame is missing required columns: {sorted(missing)}"
             )
 
         if df.is_empty():
@@ -440,11 +440,7 @@ class DuckDBStorage:
                     created_at
                 )
                 SELECT
-                    {
-                        self._next_id_expression(
-                            "counterfactual_clusters"
-                        )
-                    },
+                    {self._next_id_expression("counterfactual_clusters")},
                     ?,
                     ?,
                     instance_id,
@@ -460,7 +456,7 @@ class DuckDBStorage:
             )
 
         logger.info(
-            "Stored %d counterfactual cluster assignments " "for %s (run: %s)",
+            "Stored %d counterfactual cluster assignments for %s (run: %s)",
             cluster_df.height,
             model_name,
             run_id,
@@ -514,11 +510,7 @@ class DuckDBStorage:
                     created_at
                 )
                 SELECT
-                    {
-                        self._next_id_expression(
-                            "global_rules"
-                        )
-                    },
+                    {self._next_id_expression("global_rules")},
                     ?,
                     ?,
                     cluster_id,

@@ -38,7 +38,7 @@ class CounterfactualRuleExtractor:
     ) -> str:
         direction = "increase" if delta > 0 else "decrease"
 
-        return f"{feature} tends to {direction} " f"(avg normalized delta {delta:+.3f})"
+        return f"{feature} tends to {direction} (avg normalized delta {delta:+.3f})"
 
     @staticmethod
     def _format_transition(
@@ -90,15 +90,13 @@ class CounterfactualRuleExtractor:
                     )
                 )
             else:
-                conditions.append(
-                    f"{feature} changes " f"({change_rate:.0%} of cluster)"
-                )
+                conditions.append(f"{feature} changes ({change_rate:.0%} of cluster)")
 
         for transition, rate in profile.top_transitions:
             if rate < self.min_transition_rate:
                 continue
 
-            conditions.append(f"{self._format_transition(transition)} " f"({rate:.0%})")
+            conditions.append(f"{self._format_transition(transition)} ({rate:.0%})")
 
         if not conditions:
             conditions.append("No dominant intervention pattern")

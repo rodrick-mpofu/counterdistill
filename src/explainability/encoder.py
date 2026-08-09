@@ -82,7 +82,7 @@ class CounterfactualEncoder:
         source = str(original).strip().replace(" ", "_")
         destination = str(counterfactual).strip().replace(" ", "_")
 
-        return f"{feature}__transition__" f"{source}__to__{destination}"
+        return f"{feature}__transition__{source}__to__{destination}"
 
     def _extract_records(
         self,
@@ -304,14 +304,14 @@ class CounterfactualEncoder:
         """Return only numeric clustering features as a NumPy matrix."""
         if not self.is_fitted_:
             raise RuntimeError(
-                "CounterfactualEncoder must be fitted before " "clustering_matrix()."
+                "CounterfactualEncoder must be fitted before clustering_matrix()."
             )
 
         missing = [column for column in self.feature_names_ if column not in df.columns]
 
         if missing:
             raise ValueError(
-                "Encoded DataFrame is missing clustering features: " f"{missing}"
+                f"Encoded DataFrame is missing clustering features: {missing}"
             )
 
         return df.select(self.feature_names_).cast(pl.Float64).to_numpy()
