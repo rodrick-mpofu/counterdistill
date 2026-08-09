@@ -2,13 +2,26 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from typing import TypedDict
 
 import duckdb
 import polars as pl
 
 logger = logging.getLogger(__name__)
+
+
+class GlobalRuleRecord(TypedDict):
+    """Typed representation of a distilled global rule."""
+
+    cluster_id: int
+    conditions: list[str]
+    support: int
+    support_share: float
+    avg_distance: float
+    quality_score: float
 
 
 class DuckDBStorage:
@@ -72,6 +85,36 @@ class DuckDBStorage:
                     metric_name VARCHAR,
                     metric_value DOUBLE,
                     run_id VARCHAR,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS counterfactual_clusters (
+                    id BIGINT PRIMARY KEY,
+                    model_name VARCHAR,
+                    run_id VARCHAR,
+                    instance_id BIGINT,
+                    counterfactual_id BIGINT,
+                    cluster_id INTEGER,
+                    created_at TIMESTAMP
+                )
+                """
+            )
+
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS global_rules (
+                    id BIGINT PRIMARY KEY,
+                    model_name VARCHAR,
+                    run_id VARCHAR,
+                    cluster_id INTEGER,
+                    conditions JSON,
+                    support INTEGER,
+                    support_share DOUBLE,
+                    avg_distance DOUBLE,
+                    quality_score DOUBLE,
                     created_at TIMESTAMP
                 )
                 """
@@ -346,3 +389,187 @@ class DuckDBStorage:
             ).fetchdf()
 
         return pl.from_pandas(result)
+
+    def store_counterfactual_clusters(
+        self,
+        df: pl.DataFrame,
+        model_name: str,
+        run_id: str,
+    ) -> None:
+        """Store counterfactual cluster assignments."""
+        required = {
+            "id",
+            "instance_id",
+            "cluster_id",
+        }
+
+        missing = required.difference(df.columns)
+
+        if missing:
+            raise ValueError(
+                "Cluster DataFrame is missing required columns: " f"{sorted(missing)}"
+            )
+
+        if df.is_empty():
+            logger.warning("No counterfactual cluster assignments to store.")
+            return
+
+        cluster_df = df.select(
+            [
+                pl.col("id").alias("counterfactual_id"),
+                "instance_id",
+                "cluster_id",
+            ]
+        )
+
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.register(
+                "temp_clusters",
+                cluster_df.to_pandas(),
+            )
+
+            conn.execute(
+                f"""
+                INSERT INTO counterfactual_clusters (
+                    id,
+                    model_name,
+                    run_id,
+                    instance_id,
+                    counterfactual_id,
+                    cluster_id,
+                    created_at
+                )
+                SELECT
+                    {
+                        self._next_id_expression(
+                            "counterfactual_clusters"
+                        )
+                    },
+                    ?,
+                    ?,
+                    instance_id,
+                    counterfactual_id,
+                    cluster_id,
+                    CURRENT_TIMESTAMP
+                FROM temp_clusters
+                """,
+                [
+                    model_name,
+                    run_id,
+                ],
+            )
+
+        logger.info(
+            "Stored %d counterfactual cluster assignments " "for %s (run: %s)",
+            cluster_df.height,
+            model_name,
+            run_id,
+        )
+
+    def store_global_rules(
+        self,
+        rules: list[GlobalRuleRecord],
+        model_name: str,
+        run_id: str,
+    ) -> None:
+        """Store distilled global counterfactual rules."""
+        if not rules:
+            logger.warning("No global rules to store.")
+            return
+
+        records: list[dict[str, object]] = []
+
+        for rule in rules:
+            records.append(
+                {
+                    "cluster_id": rule["cluster_id"],
+                    "conditions": json.dumps(rule["conditions"]),
+                    "support": rule["support"],
+                    "support_share": rule["support_share"],
+                    "avg_distance": rule["avg_distance"],
+                    "quality_score": rule["quality_score"],
+                }
+            )
+
+        df = pl.DataFrame(records)
+
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.register(
+                "temp_rules",
+                df.to_pandas(),
+            )
+
+            conn.execute(
+                f"""
+                INSERT INTO global_rules (
+                    id,
+                    model_name,
+                    run_id,
+                    cluster_id,
+                    conditions,
+                    support,
+                    support_share,
+                    avg_distance,
+                    quality_score,
+                    created_at
+                )
+                SELECT
+                    {
+                        self._next_id_expression(
+                            "global_rules"
+                        )
+                    },
+                    ?,
+                    ?,
+                    cluster_id,
+                    CAST(conditions AS JSON),
+                    support,
+                    support_share,
+                    avg_distance,
+                    quality_score,
+                    CURRENT_TIMESTAMP
+                FROM temp_rules
+                """,
+                [
+                    model_name,
+                    run_id,
+                ],
+            )
+
+        logger.info(
+            "Stored %d global rules for %s (run: %s)",
+            len(records),
+            model_name,
+            run_id,
+        )
+
+    def clear_aggregation_results(
+        self,
+        model_name: str,
+        run_id: str,
+    ) -> None:
+        """Delete previously stored aggregation outputs for a run."""
+        with duckdb.connect(str(self.db_path)) as conn:
+            conn.execute(
+                """
+                DELETE FROM counterfactual_clusters
+                WHERE model_name = ?
+                AND run_id = ?
+                """,
+                [model_name, run_id],
+            )
+
+            conn.execute(
+                """
+                DELETE FROM global_rules
+                WHERE model_name = ?
+                AND run_id = ?
+                """,
+                [model_name, run_id],
+            )
+
+        logger.info(
+            "Cleared aggregation results for %s (run: %s)",
+            model_name,
+            run_id,
+        )
