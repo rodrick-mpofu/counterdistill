@@ -141,6 +141,10 @@ class DiceExplainer:
         "Without-pay",
     }
 
+    INVALID_OCCUPATION_DESTINATIONS = {
+        "Unknown",
+    }
+
     def __init__(
         self,
         model: Any,
@@ -581,6 +585,9 @@ class DiceExplainer:
                 return False
 
         if counterfactual.get("workclass") in self.INVALID_WORKCLASS_DESTINATIONS:
+            return False
+
+        if counterfactual.get("occupation") in self.INVALID_OCCUPATION_DESTINATIONS:
             return False
 
         for feature, bounds in self._default_permitted_range().items():
