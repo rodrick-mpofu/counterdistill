@@ -135,6 +135,16 @@ class DiceExplainer:
         "education_num",
     ]
 
+    INVALID_WORKCLASS_DESTINATIONS = {
+        "Unknown",
+        "Never-worked",
+        "Without-pay",
+    }
+
+    INVALID_OCCUPATION_DESTINATIONS = {
+        "Unknown",
+    }
+
     def __init__(
         self,
         model: Any,
@@ -558,6 +568,27 @@ class DiceExplainer:
 
                 if actual_num != expected_num:
                     return False
+        # Prevent education from decreasing.
+        if "education" in original.index and "education" in counterfactual.index:
+            original_education = str(original["education"])
+            counterfactual_education = str(counterfactual["education"])
+
+            original_level = EDUCATION_NUM_MAP.get(original_education)
+
+            counterfactual_level = EDUCATION_NUM_MAP.get(counterfactual_education)
+
+            if (
+                original_level is not None
+                and counterfactual_level is not None
+                and counterfactual_level < original_level
+            ):
+                return False
+
+        if counterfactual.get("workclass") in self.INVALID_WORKCLASS_DESTINATIONS:
+            return False
+
+        if counterfactual.get("occupation") in self.INVALID_OCCUPATION_DESTINATIONS:
+            return False
 
         for feature, bounds in self._default_permitted_range().items():
             if feature not in counterfactual.index:
