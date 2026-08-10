@@ -230,3 +230,73 @@ class DashboardData:
             "cluster_count": int(row["cluster_count"]),
             "rule_count": int(row["rule_count"]),
         }
+
+    def counterfactual_changes(
+        self,
+        counterfactual_id: int,
+        run_id: str,
+    ) -> pl.DataFrame:
+        """Return changed features for one counterfactual."""
+        result = self._query(
+            """
+            SELECT
+                original_features,
+                counterfactual_features
+            FROM counterfactuals
+            WHERE id = ?
+            AND run_id = ?
+            LIMIT 1
+            """,
+            [
+                counterfactual_id,
+                run_id,
+            ],
+        )
+
+        if result.is_empty():
+            return pl.DataFrame(
+                schema={
+                    "feature": pl.String,
+                    "original": pl.String,
+                    "counterfactual": pl.String,
+                }
+            )
+
+        row = result.row(
+            0,
+            named=True,
+        )
+
+        original = self.parse_json_object(row["original_features"])
+
+        counterfactual = self.parse_json_object(row["counterfactual_features"])
+
+        changes: list[dict[str, str]] = []
+
+        all_features = sorted(set(original) | set(counterfactual))
+
+        for feature in all_features:
+            original_value = original.get(feature)
+            counterfactual_value = counterfactual.get(feature)
+
+            if original_value == counterfactual_value:
+                continue
+
+            changes.append(
+                {
+                    "feature": feature,
+                    "original": str(original_value),
+                    "counterfactual": str(counterfactual_value),
+                }
+            )
+
+        if not changes:
+            return pl.DataFrame(
+                schema={
+                    "feature": pl.String,
+                    "original": pl.String,
+                    "counterfactual": pl.String,
+                }
+            )
+
+        return pl.DataFrame(changes)

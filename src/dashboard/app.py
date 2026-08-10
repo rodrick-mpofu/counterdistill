@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import polars as pl
 import streamlit as st
 
 from src.dashboard.data import DashboardData
@@ -120,6 +121,219 @@ def render_overview(
     )
 
 
+def render_counterfactuals(
+    data: DashboardData,
+    run_id: str,
+) -> None:
+    """Render the counterfactual explorer."""
+    st.title("Counterfactual Explorer")
+
+    st.caption("Explore feasible feature changes that alter " "the model's prediction.")
+
+    counterfactuals = data.counterfactuals(run_id)
+
+    if counterfactuals.is_empty():
+        st.info("No counterfactuals are available " "for this run.")
+        return
+
+    # -------------------------------------------------
+    # Filters
+    # -------------------------------------------------
+
+    st.subheader("Filters")
+
+    filter_col1, filter_col2 = st.columns(2)
+
+    cluster_values = sorted(
+        int(value)
+        for value in (counterfactuals["cluster_id"].drop_nulls().unique().to_list())
+    )
+
+    with filter_col1:
+        selected_clusters = st.multiselect(
+            "Clusters",
+            options=cluster_values,
+            default=cluster_values,
+        )
+
+    distance_series = counterfactuals["distance"].drop_nulls()
+
+    max_distance = 1.0 if distance_series.is_empty() else float(distance_series.max())
+
+    slider_max = max(
+        max_distance,
+        0.001,
+    )
+
+    with filter_col2:
+        distance_limit = st.slider(
+            "Maximum counterfactual distance",
+            min_value=0.0,
+            max_value=slider_max,
+            value=slider_max,
+            step=0.001,
+            format="%.3f",
+        )
+
+    filtered = counterfactuals.filter(pl.col("distance") <= distance_limit)
+
+    if selected_clusters:
+        filtered = filtered.filter(pl.col("cluster_id").is_in(selected_clusters))
+
+    # -------------------------------------------------
+    # Summary
+    # -------------------------------------------------
+
+    metric1, metric2, metric3 = st.columns(3)
+
+    metric1.metric(
+        "Counterfactuals",
+        filtered.height,
+    )
+
+    unique_instances = (
+        filtered["instance_id"].n_unique() if not filtered.is_empty() else 0
+    )
+
+    metric2.metric(
+        "Instances",
+        unique_instances,
+    )
+
+    if filtered.is_empty():
+        avg_distance = 0.0
+    else:
+        mean_distance = filtered["distance"].mean()
+
+        avg_distance = float(mean_distance) if mean_distance is not None else 0.0
+
+    metric3.metric(
+        "Average Distance",
+        f"{avg_distance:.3f}",
+    )
+
+    st.divider()
+
+    if filtered.is_empty():
+        st.warning("No counterfactuals match " "the selected filters.")
+        return
+
+    # -------------------------------------------------
+    # Counterfactual table
+    # -------------------------------------------------
+
+    st.subheader("Counterfactuals")
+
+    display_columns = [
+        "id",
+        "instance_id",
+        "cluster_id",
+        "original_class",
+        "target_class",
+        "distance",
+    ]
+
+    existing_columns = [
+        column for column in display_columns if column in filtered.columns
+    ]
+
+    st.dataframe(
+        filtered.select(existing_columns).sort(
+            [
+                "instance_id",
+                "distance",
+            ]
+        ),
+        hide_index=True,
+        width="stretch",
+    )
+
+    st.divider()
+
+    # -------------------------------------------------
+    # Individual explanation
+    # -------------------------------------------------
+
+    st.subheader("Inspect Counterfactual")
+
+    instance_ids = sorted(
+        int(value) for value in (filtered["instance_id"].unique().to_list())
+    )
+
+    selected_instance = st.selectbox(
+        "Instance",
+        options=instance_ids,
+    )
+
+    instance_counterfactuals = filtered.filter(
+        pl.col("instance_id") == selected_instance
+    ).sort("distance")
+
+    counterfactual_ids = [
+        int(value) for value in (instance_counterfactuals["id"].to_list())
+    ]
+
+    selected_counterfactual = st.selectbox(
+        "Counterfactual",
+        options=counterfactual_ids,
+    )
+
+    selected_row = instance_counterfactuals.filter(
+        pl.col("id") == selected_counterfactual
+    ).row(
+        0,
+        named=True,
+    )
+
+    info1, info2, info3, info4 = st.columns(4)
+
+    info1.metric(
+        "Instance",
+        selected_instance,
+    )
+
+    info2.metric(
+        "Cluster",
+        (
+            selected_row["cluster_id"]
+            if selected_row["cluster_id"] is not None
+            else "N/A"
+        ),
+    )
+
+    info3.metric(
+        "Distance",
+        f"{float(selected_row['distance']):.3f}",
+    )
+
+    info4.metric(
+        "Target Class",
+        selected_row["target_class"],
+    )
+
+    st.markdown("#### Feature Changes")
+
+    changes = data.counterfactual_changes(
+        counterfactual_id=(selected_counterfactual),
+        run_id=run_id,
+    )
+
+    if changes.is_empty():
+        st.info("No feature changes were found.")
+    else:
+        st.dataframe(
+            changes,
+            hide_index=True,
+            width="stretch",
+        )
+
+    st.caption(
+        "These counterfactuals describe model "
+        "behavior under feasible feature changes. "
+        "They are not causal recommendations."
+    )
+
+
 def main() -> None:
     """Run the CounterDistill dashboard."""
     data = get_data()
@@ -162,9 +376,10 @@ def main() -> None:
         )
 
     elif page == "Counterfactuals":
-        st.title("Counterfactual Explorer")
-
-        st.info("Counterfactual explorer coming next.")
+        render_counterfactuals(
+            data=data,
+            run_id=selected_run,
+        )
 
     elif page == "Global Rules":
         st.title("Global Rules")
