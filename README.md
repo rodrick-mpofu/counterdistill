@@ -24,6 +24,29 @@ The project combines:
 > Counterfactual explanations and distilled rules describe **model behavior**. They should not be interpreted as causal effects or real-world prescriptions.
 
 ---
+# Demo
+
+CounterDistill includes an interactive Streamlit dashboard for exploring local counterfactual explanations, SHAP feature attributions, counterfactual clusters, and the global rules distilled from them.
+
+### Overview
+
+![CounterDistill dashboard overview](docs/images/dashboard-overview.png)
+
+The overview connects the complete explanation pipeline in one place: counterfactual coverage, SHAP feature importance, clustering results, and the highest-quality distilled rules.
+
+### From 399 Local Explanations to 6 Global Rules
+
+![CounterDistill global rules](docs/images/global-rules.png)
+
+CounterDistill clusters semantically encoded counterfactual interventions and distills each cluster into a compact rule summarizing recurring model behavior.
+
+### Inspect an Individual Counterfactual
+
+![CounterDistill counterfactual explorer](docs/images/counterfactual-explorer.png)
+
+The Counterfactual Explorer preserves explanations in the original semantic feature space, making it possible to inspect exactly which feasible changes alter an individual prediction.
+
+---
 
 # Project Motivation
 
