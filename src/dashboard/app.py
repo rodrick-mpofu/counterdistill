@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import polars as pl
 import streamlit as st
 
@@ -29,13 +31,12 @@ def render_overview(
     st.title("CounterDistill")
 
     st.caption(
-        "Distilling local counterfactual explanations "
-        "into interpretable global rules."
+        "Distilling local counterfactual explanations into interpretable global rules."
     )
 
     st.subheader("Run Overview")
 
-    st.write(f"**Model:** `{model_name}`  \n" f"**Run:** `{run_id}`")
+    st.write(f"**Model:** `{model_name}`  \n**Run:** `{run_id}`")
 
     summary = data.run_summary(run_id)
 
@@ -79,7 +80,7 @@ def render_overview(
         )
 
         if shap.is_empty():
-            st.info("No SHAP values are available " "for this run.")
+            st.info("No SHAP values are available for this run.")
         else:
             shap_chart = shap.sort("mean_abs_shap").to_pandas()
 
@@ -96,21 +97,21 @@ def render_overview(
         rules = data.global_rules(run_id)
 
         if rules.is_empty():
-            st.info("No distilled rules are available " "for this run.")
+            st.info("No distilled rules are available for this run.")
 
         else:
             for row in rules.head(3).iter_rows(named=True):
                 with st.container(border=True):
-                    st.markdown(f"**Cluster " f"{row['cluster_id']}**")
+                    st.markdown(f"**Cluster {row['cluster_id']}**")
 
                     st.metric(
                         "Quality",
                         f"{row['quality_score']:.3f}",
                     )
 
-                    st.write(f"Coverage: " f"{row['support_share']:.1%}")
+                    st.write(f"Coverage: {row['support_share']:.1%}")
 
-                    st.write(f"Support: " f"{row['support']}")
+                    st.write(f"Support: {row['support']}")
 
     st.divider()
 
@@ -128,12 +129,12 @@ def render_counterfactuals(
     """Render the counterfactual explorer."""
     st.title("Counterfactual Explorer")
 
-    st.caption("Explore feasible feature changes that alter " "the model's prediction.")
+    st.caption("Explore feasible feature changes that alter the model's prediction.")
 
     counterfactuals = data.counterfactuals(run_id)
 
     if counterfactuals.is_empty():
-        st.info("No counterfactuals are available " "for this run.")
+        st.info("No counterfactuals are available for this run.")
         return
 
     # -------------------------------------------------
@@ -158,7 +159,12 @@ def render_counterfactuals(
 
     distance_series = counterfactuals["distance"].drop_nulls()
 
-    max_distance = 1.0 if distance_series.is_empty() else float(distance_series.max())
+    max_distance_value = cast(
+        float | None,
+        distance_series.max(),
+    )
+
+    max_distance = max_distance_value if max_distance_value is not None else 1.0
 
     slider_max = max(
         max_distance,
@@ -203,9 +209,12 @@ def render_counterfactuals(
     if filtered.is_empty():
         avg_distance = 0.0
     else:
-        mean_distance = filtered["distance"].mean()
+        mean_distance = cast(
+            float | None,
+            filtered["distance"].mean(),
+        )
 
-        avg_distance = float(mean_distance) if mean_distance is not None else 0.0
+        avg_distance = mean_distance if mean_distance is not None else 0.0
 
     metric3.metric(
         "Average Distance",
@@ -215,7 +224,7 @@ def render_counterfactuals(
     st.divider()
 
     if filtered.is_empty():
-        st.warning("No counterfactuals match " "the selected filters.")
+        st.warning("No counterfactuals match the selected filters.")
         return
 
     # -------------------------------------------------
@@ -349,7 +358,7 @@ def render_global_rules(
     rules = data.global_rules(run_id)
 
     if rules.is_empty():
-        st.info("No distilled global rules are available " "for this run.")
+        st.info("No distilled global rules are available for this run.")
         return
 
     # -------------------------------------------------
@@ -376,9 +385,12 @@ def render_global_rules(
     if quality_values.is_empty():
         max_quality = 1.0
     else:
-        maximum = quality_values.max()
+        maximum = cast(
+            float | None,
+            quality_values.max(),
+        )
 
-        max_quality = float(maximum) if maximum is not None else 1.0
+        max_quality = maximum if maximum is not None else 1.0
 
     with filter_col2:
         minimum_quality = st.slider(
@@ -403,7 +415,7 @@ def render_global_rules(
     # -------------------------------------------------
 
     if filtered.is_empty():
-        st.warning("No global rules match " "the selected filters.")
+        st.warning("No global rules match the selected filters.")
         return
 
     metric1, metric2, metric3, metric4 = st.columns(4)
@@ -422,18 +434,24 @@ def render_global_rules(
         total_support,
     )
 
-    avg_quality_value = filtered["quality_score"].mean()
+    avg_quality_value = cast(
+        float | None,
+        filtered["quality_score"].mean(),
+    )
 
-    avg_quality = float(avg_quality_value) if avg_quality_value is not None else 0.0
+    avg_quality = avg_quality_value if avg_quality_value is not None else 0.0
 
     metric3.metric(
         "Average Quality",
         f"{avg_quality:.3f}",
     )
 
-    avg_distance_value = filtered["avg_distance"].mean()
+    avg_distance_value = cast(
+        float | None,
+        filtered["avg_distance"].mean(),
+    )
 
-    avg_distance = float(avg_distance_value) if avg_distance_value is not None else 0.0
+    avg_distance = avg_distance_value if avg_distance_value is not None else 0.0
 
     metric4.metric(
         "Average Distance",
@@ -524,7 +542,7 @@ def render_global_rules(
             title_col, quality_col = st.columns([4, 1])
 
             with title_col:
-                st.markdown(f"### #{rank} — Cluster " f"{cluster_id}")
+                st.markdown(f"### #{rank} — Cluster {cluster_id}")
 
             with quality_col:
                 st.metric(
@@ -582,7 +600,7 @@ def render_shap(
     st.title("SHAP Explorer")
 
     st.caption(
-        "Explore global feature importance and " "instance-level model contributions."
+        "Explore global feature importance and instance-level model contributions."
     )
 
     # -------------------------------------------------
@@ -605,7 +623,7 @@ def render_shap(
     )
 
     if importance.is_empty():
-        st.info("No SHAP values are available " "for this run.")
+        st.info("No SHAP values are available for this run.")
         return
 
     global_left, global_right = st.columns([2, 1])
@@ -669,7 +687,7 @@ def render_shap(
     instance_ids = data.shap_instances(run_id)
 
     if not instance_ids:
-        st.info("No instance-level SHAP explanations " "are available for this run.")
+        st.info("No instance-level SHAP explanations are available for this run.")
         return
 
     control_col1, control_col2 = st.columns(2)
@@ -695,7 +713,7 @@ def render_shap(
     )
 
     if local_shap.is_empty():
-        st.warning("No SHAP explanation was found " "for this instance.")
+        st.warning("No SHAP explanation was found for this instance.")
         return
 
     # The query is already ordered by absolute SHAP value.
@@ -723,7 +741,10 @@ def render_shap(
 
         strongest_positive_feature = str(positive_row["feature_name"])
 
-        strongest_positive_value = float(positive_row["shap_value"])
+        strongest_positive_value = cast(
+            float,
+            positive_row["shap_value"],
+        )
 
     strongest_negative_feature = "N/A"
     strongest_negative_value = 0.0
@@ -736,7 +757,10 @@ def render_shap(
 
         strongest_negative_feature = str(negative_row["feature_name"])
 
-        strongest_negative_value = float(negative_row["shap_value"])
+        strongest_negative_value = cast(
+            float,
+            negative_row["shap_value"],
+        )
 
     total_abs_value = local_shap.select(
         pl.col("shap_value").abs().sum().alias("total_abs_shap")
@@ -770,7 +794,7 @@ def render_shap(
     # Local SHAP chart
     # -------------------------------------------------
 
-    st.markdown(f"#### Contributions for Instance " f"{selected_instance}")
+    st.markdown(f"#### Contributions for Instance {selected_instance}")
 
     chart_col, table_col = st.columns([2, 1])
 

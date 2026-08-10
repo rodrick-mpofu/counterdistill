@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import duckdb
 import polars as pl
@@ -39,7 +39,7 @@ class DashboardData:
                 params or [],
             ).fetch_arrow_table()
 
-        return pl.from_arrow(result)
+        return cast(pl.DataFrame, pl.from_arrow(result))
 
     def available_runs(self) -> pl.DataFrame:
         """Return explanation runs ordered from newest to oldest."""

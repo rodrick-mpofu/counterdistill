@@ -13,11 +13,11 @@ def main() -> None:
 
     counterfactuals = data.counterfactuals(RUN_ID)
 
-    print(f"\nCounterfactuals: " f"{counterfactuals.height}")
+    print(f"\nCounterfactuals: {counterfactuals.height}")
 
     rules = data.global_rules(RUN_ID)
 
-    print(f"Global rules: " f"{rules.height}")
+    print(f"Global rules: {rules.height}")
 
     shap = data.shap_importance(
         RUN_ID,
