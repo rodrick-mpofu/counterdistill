@@ -300,3 +300,18 @@ class DashboardData:
             )
 
         return pl.DataFrame(changes)
+
+    def parse_json_list(
+        self,
+        value: str | list[str],
+    ) -> list[str]:
+        """Parse a stored DuckDB JSON list."""
+        if isinstance(value, list):
+            return [str(item) for item in value]
+
+        parsed = json.loads(value)
+
+        if not isinstance(parsed, list):
+            raise ValueError("Expected stored JSON list.")
+
+        return [str(item) for item in parsed]

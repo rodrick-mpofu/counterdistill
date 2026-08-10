@@ -334,6 +334,246 @@ def render_counterfactuals(
     )
 
 
+def render_global_rules(
+    data: DashboardData,
+    run_id: str,
+) -> None:
+    """Render distilled global counterfactual rules."""
+    st.title("Global Rules")
+
+    st.caption(
+        "Explore interpretable rules distilled from "
+        "clusters of local counterfactual explanations."
+    )
+
+    rules = data.global_rules(run_id)
+
+    if rules.is_empty():
+        st.info("No distilled global rules are available " "for this run.")
+        return
+
+    # -------------------------------------------------
+    # Filters
+    # -------------------------------------------------
+
+    st.subheader("Filters")
+
+    filter_col1, filter_col2 = st.columns(2)
+
+    cluster_ids = sorted(
+        int(value) for value in (rules["cluster_id"].drop_nulls().unique().to_list())
+    )
+
+    with filter_col1:
+        selected_clusters = st.multiselect(
+            "Clusters",
+            options=cluster_ids,
+            default=cluster_ids,
+        )
+
+    quality_values = rules["quality_score"].drop_nulls()
+
+    if quality_values.is_empty():
+        max_quality = 1.0
+    else:
+        maximum = quality_values.max()
+
+        max_quality = float(maximum) if maximum is not None else 1.0
+
+    with filter_col2:
+        minimum_quality = st.slider(
+            "Minimum quality score",
+            min_value=0.0,
+            max_value=max(
+                max_quality,
+                0.01,
+            ),
+            value=0.0,
+            step=0.01,
+            format="%.2f",
+        )
+
+    filtered = rules.filter(pl.col("quality_score") >= minimum_quality)
+
+    if selected_clusters:
+        filtered = filtered.filter(pl.col("cluster_id").is_in(selected_clusters))
+
+    # -------------------------------------------------
+    # Summary metrics
+    # -------------------------------------------------
+
+    if filtered.is_empty():
+        st.warning("No global rules match " "the selected filters.")
+        return
+
+    metric1, metric2, metric3, metric4 = st.columns(4)
+
+    metric1.metric(
+        "Rules",
+        filtered.height,
+    )
+
+    total_support_value = filtered["support"].sum()
+
+    total_support = int(total_support_value) if total_support_value is not None else 0
+
+    metric2.metric(
+        "Total Support",
+        total_support,
+    )
+
+    avg_quality_value = filtered["quality_score"].mean()
+
+    avg_quality = float(avg_quality_value) if avg_quality_value is not None else 0.0
+
+    metric3.metric(
+        "Average Quality",
+        f"{avg_quality:.3f}",
+    )
+
+    avg_distance_value = filtered["avg_distance"].mean()
+
+    avg_distance = float(avg_distance_value) if avg_distance_value is not None else 0.0
+
+    metric4.metric(
+        "Average Distance",
+        f"{avg_distance:.3f}",
+    )
+
+    st.divider()
+
+    # -------------------------------------------------
+    # Rule comparison table
+    # -------------------------------------------------
+
+    st.subheader("Rule Comparison")
+
+    comparison = filtered.select(
+        [
+            "cluster_id",
+            "support",
+            "support_share",
+            "avg_distance",
+            "quality_score",
+        ]
+    ).sort(
+        "quality_score",
+        descending=True,
+    )
+
+    st.dataframe(
+        comparison,
+        hide_index=True,
+        width="stretch",
+        column_config={
+            "cluster_id": st.column_config.NumberColumn(
+                "Cluster",
+                format="%d",
+            ),
+            "support": st.column_config.NumberColumn(
+                "Support",
+                format="%d",
+            ),
+            "support_share": (
+                st.column_config.ProgressColumn(
+                    "Coverage",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.1%%",
+                )
+            ),
+            "avg_distance": (
+                st.column_config.NumberColumn(
+                    "Avg Distance",
+                    format="%.3f",
+                )
+            ),
+            "quality_score": (
+                st.column_config.ProgressColumn(
+                    "Quality",
+                    min_value=0.0,
+                    max_value=1.0,
+                    format="%.3f",
+                )
+            ),
+        },
+    )
+
+    st.divider()
+
+    # -------------------------------------------------
+    # Rule cards
+    # -------------------------------------------------
+
+    st.subheader("Distilled Rules")
+
+    ranked_rules = filtered.sort(
+        "quality_score",
+        descending=True,
+    )
+
+    for rank, row in enumerate(
+        ranked_rules.iter_rows(named=True),
+        start=1,
+    ):
+        cluster_id = int(row["cluster_id"])
+
+        conditions = data.parse_json_list(row["conditions"])
+
+        with st.container(border=True):
+            title_col, quality_col = st.columns([4, 1])
+
+            with title_col:
+                st.markdown(f"### #{rank} — Cluster " f"{cluster_id}")
+
+            with quality_col:
+                st.metric(
+                    "Quality",
+                    f"{float(row['quality_score']):.3f}",
+                )
+
+            st.markdown("#### Rule")
+
+            if not conditions:
+                st.write("No conditions extracted.")
+
+            else:
+                rule_lines: list[str] = []
+
+                for index, condition in enumerate(conditions):
+                    prefix = "IF" if index == 0 else "AND"
+
+                    rule_lines.append(f"**{prefix}** {condition}")
+
+                st.markdown("  \n".join(rule_lines))
+
+            stat1, stat2, stat3 = st.columns(3)
+
+            stat1.metric(
+                "Support",
+                int(row["support"]),
+            )
+
+            stat2.metric(
+                "Coverage",
+                (f"{float(row['support_share']):.1%}"),
+            )
+
+            stat3.metric(
+                "Avg Distance",
+                (f"{float(row['avg_distance']):.3f}"),
+            )
+
+    st.divider()
+
+    st.info(
+        "These rules summarize recurring model "
+        "counterfactual patterns. They describe "
+        "model behavior and should not be interpreted "
+        "as causal or prescriptive recommendations."
+    )
+
+
 def main() -> None:
     """Run the CounterDistill dashboard."""
     data = get_data()
@@ -382,9 +622,10 @@ def main() -> None:
         )
 
     elif page == "Global Rules":
-        st.title("Global Rules")
-
-        st.info("Global rule explorer coming next.")
+        render_global_rules(
+            data=data,
+            run_id=selected_run,
+        )
 
     elif page == "SHAP":
         st.title("SHAP Explanations")
