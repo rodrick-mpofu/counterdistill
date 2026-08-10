@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import hydra
 import mlflow
@@ -15,8 +13,6 @@ from omegaconf import DictConfig, OmegaConf
 
 from src.features.feature_engineering import FeatureEngineer
 from src.ingestion.data_loader import AdultIncomeLoader
-
-sys.path.append(str(Path(__file__).parent.parent.parent))
 
 logger = logging.getLogger(__name__)
 
@@ -109,8 +105,57 @@ def main(cfg: DictConfig) -> None:
     mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(cfg.mlflow.experiment_name)
 
+    model_class_name = str(cfg.model._class_.split(".")[-1])
+
+    model_params = {
+        f"model.{key}": value
+        for key, value in cfg.model.items()
+        if not key.startswith("_")
+    }
+
+    data_params = {f"data.{key}": value for key, value in cfg.data.items()}
+
     with mlflow.start_run(run_name=cfg.mlflow.run_name) as run:
-        mlflow.log_params({**cfg.model, **cfg.data})
+        mlflow.log_params(
+            {
+                **model_params,
+                **data_params,
+                "seed": int(cfg.seed),
+                "train_rows": x_train_fe.height,
+                "test_rows": x_test_fe.height,
+                "feature_count": x_train_fe.width,
+            }
+        )
+
+        mlflow.set_tags(
+            {
+                "project": "counterdistill",
+                "stage": "training",
+                "model_class": model_class_name,
+                "dataset": str(cfg.data.name),
+            }
+        )
+
+        resolved_config_raw = OmegaConf.to_container(
+            cfg,
+            resolve=True,
+        )
+
+        if not isinstance(
+            resolved_config_raw,
+            dict,
+        ):
+            raise TypeError("Expected Hydra configuration to resolve to a dictionary.")
+
+        resolved_config = cast(
+            dict[str, Any],
+            resolved_config_raw,
+        )
+
+        mlflow.log_dict(
+            resolved_config,
+            "config/resolved_config.yaml",
+        )
 
         result = train_model(cfg, x_train_fe, y_train, x_test_fe, y_test)
         mlflow.log_metric("accuracy", result["accuracy"])
@@ -122,7 +167,6 @@ def main(cfg: DictConfig) -> None:
                     if isinstance(value, int | float):
                         mlflow.log_metric(f"{class_name}_{metric_name}", value)
 
-        model_class_name = cfg.model._class_.split(".")[-1]
         trusted_types_map = {
             "XGBClassifier": [
                 "xgboost.core.Booster",
@@ -142,20 +186,14 @@ def main(cfg: DictConfig) -> None:
             skops_trusted_types=trusted_types_map.get(model_class_name),
         )
 
-        feature_schema_path = Path("feature_schema.json")
-        feature_schema_path.write_text(
-            json.dumps(
-                {
-                    "feature_names": engine.feature_names_,
-                    "scale": engine.scale_,
-                    "scale_stats": engine.scale_stats_,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
+        mlflow.log_dict(
+            {
+                "feature_names": engine.feature_names_,
+                "scale": engine.scale_,
+                "scale_stats": engine.scale_stats_,
+            },
+            "preprocessing/feature_schema.json",
         )
-        mlflow.log_artifact(str(feature_schema_path), artifact_path="preprocessing")
-        feature_schema_path.unlink()
 
         if hasattr(result["model"], "feature_importances_"):
             importance_dict = {
@@ -173,13 +211,10 @@ def main(cfg: DictConfig) -> None:
                     reverse=True,
                 )
             )
-            importance_path = Path("feature_importance.json")
-            importance_path.write_text(
-                json.dumps(importance_dict, indent=2),
-                encoding="utf-8",
+            mlflow.log_dict(
+                importance_dict,
+                "model/feature_importance.json",
             )
-            mlflow.log_artifact(str(importance_path))
-            importance_path.unlink()
 
         logger.info("MLflow run ID: %s", run.info.run_id)
 

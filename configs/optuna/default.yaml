@@ -1,5 +1,13 @@
-n_trials: 100
-timeout: 3600
+n_trials: 30
+timeout: 1800
 direction: maximize
-storage: sqlite:///optuna_study.db
-study_name: counterdistill_study
+
+metric: f1
+validation_size: 0.20
+
+storage: sqlite:///database/optuna.db
+study_name: counterdistill
+
+sampler:
+  name: tpe
+  seed: ${seed}

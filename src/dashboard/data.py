@@ -37,7 +37,7 @@ class DashboardData:
             result = conn.execute(
                 query,
                 params or [],
-            ).fetch_arrow_table()
+            ).to_arrow_table()
 
         return cast(pl.DataFrame, pl.from_arrow(result))
 
