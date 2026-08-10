@@ -294,7 +294,7 @@ def render_counterfactuals(
         named=True,
     )
 
-    info1, info2, info3, info4 = st.columns(4)
+    info1, info2, info3, info4, info5 = st.columns(5)
 
     info1.metric(
         "Instance",
@@ -316,6 +316,11 @@ def render_counterfactuals(
     )
 
     info4.metric(
+        "Original Class",
+        selected_row["original_class"],
+    )
+
+    info5.metric(
         "Target Class",
         selected_row["target_class"],
     )

@@ -24,6 +24,29 @@ The project combines:
 > Counterfactual explanations and distilled rules describe **model behavior**. They should not be interpreted as causal effects or real-world prescriptions.
 
 ---
+# Demo
+
+CounterDistill includes an interactive Streamlit dashboard for exploring local counterfactual explanations, SHAP feature attributions, counterfactual clusters, and the global rules distilled from them.
+
+### Overview
+
+![CounterDistill dashboard overview](docs/images/dashboard-overview.png)
+
+The overview connects the complete explanation pipeline in one place: counterfactual coverage, SHAP feature importance, clustering results, and the highest-quality distilled rules.
+
+### From 399 Local Explanations to 6 Global Rules
+
+![CounterDistill global rules](docs/images/global-rules.png)
+
+CounterDistill clusters semantically encoded counterfactual interventions and distills each cluster into a compact rule summarizing recurring model behavior.
+
+### Inspect an Individual Counterfactual
+
+![CounterDistill counterfactual explorer](docs/images/counterfactual-explorer.png)
+
+The Counterfactual Explorer preserves explanations in the original semantic feature space, making it possible to inspect exactly which feasible changes alter an individual prediction.
+
+---
 
 # Project Motivation
 
@@ -73,32 +96,135 @@ Interactive Exploration
 
 ---
 
-# Current Results
+# Results — v1.0
 
-A validated Random Forest run on the UCI Adult Income dataset currently produces:
+CounterDistill's v1.0 evaluation uses a **single canonical Random Forest run** for model performance, SHAP explanations, DiCE counterfactuals, clustering, and rule distillation.
 
-| Metric                      | Result |
-| --------------------------- | -----: |
-| Training rows               | 26,048 |
-| Test rows                   |  6,513 |
-| Encoded model features      |    126 |
-| Random Forest test accuracy | ~0.860 |
-| Explained instances         |    100 |
-| Stored counterfactuals      |    404 |
-| Stored SHAP values          | 12,600 |
-| Counterfactual clusters     |      6 |
-| Distilled global rules      |      6 |
-| K-Means silhouette score    | 0.3726 |
+```text
+MLflow / Explanation Run
+8e53d165146d4da5b814b10dcb5143b2
+```
 
-The six counterfactual clusters capture recurring intervention patterns involving features such as:
+This keeps the reported model metrics and explanation artifacts tied to the same trained model.
 
-* capital gain
-* education
-* occupation
-* weekly working hours
-* capital loss
+## Model Performance
 
-The largest discovered pattern represents roughly **45% of the generated counterfactuals** and is dominated by increases in `capital_gain`.
+| Metric            |     Result |
+| ----------------- | ---------: |
+| **Test Accuracy** | **86.69%** |
+| **F1 Score**      | **0.6957** |
+| **ROC AUC**       | **0.9201** |
+| Encoded Features  |        126 |
+| Training Rows     |     26,048 |
+| Test Rows         |      6,513 |
+
+The final Random Forest achieves an ROC AUC of **0.9201**, indicating strong separation between the two Adult Income classes while maintaining a fully reproducible 126-feature preprocessing pipeline.
+
+## Explainability Coverage
+
+| Metric                                    |     Result |
+| ----------------------------------------- | ---------: |
+| Sampled Instances                         |        100 |
+| Instances with Valid Counterfactuals      |     **96** |
+| Counterfactual Coverage                   |  **96.0%** |
+| Generated Counterfactuals                 |    **399** |
+| Mean Counterfactuals per Covered Instance |       4.16 |
+| Mean Counterfactual Distance              | **0.0653** |
+| Mean Changed Features                     |   **1.63** |
+| Unique Intervention Signatures            |         15 |
+| Stored SHAP Values                        |     12,600 |
+
+CounterDistill found at least one feasible counterfactual for **96 of 100 sampled test instances**.
+
+The average counterfactual changed only **1.63 semantic features**, with a mean normalized distance of **0.0653**. This suggests that the generated explanations typically reach a different prediction using relatively small interventions rather than broad changes across many features.
+
+## Counterfactual Distillation
+
+| Metric                   |     Result |
+| ------------------------ | ---------: |
+| Counterfactual Clusters  |      **6** |
+| Silhouette Score         | **0.4142** |
+| Global Rules             |      **6** |
+| Mean Rule Quality        | **0.5509** |
+| Best Rule Quality        | **0.7573** |
+| Mean Conditions per Rule |   **2.17** |
+| Mean Rule Similarity     |     0.1524 |
+| Maximum Rule Similarity  |     0.5000 |
+
+The six-cluster intervention representation reaches a silhouette score of **0.4142**, improving separation between recurring counterfactual patterns compared with the earlier pipeline.
+
+The distilled rules remain compact at an average of **2.17 conditions per rule**, while the relatively low mean pairwise Jaccard similarity of **0.1524** indicates that the rule set captures meaningfully different intervention patterns rather than repeatedly describing the same behavior.
+
+## What the Model Relies On
+
+The strongest global SHAP signals for the final model are:
+
+| Rank | Feature                             | Mean Absolute SHAP |
+| ---: | ----------------------------------- | -----------------: |
+|    1 | `marital_status_Married-civ-spouse` |           0.101542 |
+|    2 | `education_num`                     |           0.055308 |
+|    3 | `capital_gain`                      |           0.050649 |
+|    4 | `age`                               |           0.038674 |
+|    5 | `relationship_Husband`              |           0.033725 |
+|    6 | `hours_per_week`                    |           0.022203 |
+|    7 | `capital_ratio`                     |           0.014912 |
+|    8 | `occupation_Exec-managerial`        |           0.014505 |
+
+SHAP answers **which encoded features influence model predictions**, while the counterfactual distillation layer answers a different question:
+
+> **What recurring semantic changes tend to move predictions across the model's decision boundary?**
+
+That distinction is central to CounterDistill.
+
+## Distilled Counterfactual Archetypes
+
+The final six clusters expose several recurring model intervention patterns:
+
+| Cluster |          Support |    Quality | Dominant Pattern                                |
+| ------: | ---------------: | ---------: | ----------------------------------------------- |
+|   **1** | **171 (42.86%)** | **0.7573** | Increase `capital_gain`                         |
+|   **3** |      73 (18.30%) |     0.6568 | Decrease `hours_per_week`                       |
+|   **4** |       31 (7.77%) |     0.6061 | Increase `capital_loss`                         |
+|   **5** |      58 (14.54%) |     0.4889 | Increase both `capital_gain` and `capital_loss` |
+|   **0** |       33 (8.27%) |     0.4480 | Increase `capital_gain` + change occupation     |
+|   **2** |       33 (8.27%) |     0.3482 | Increase `capital_gain` + change workclass      |
+
+### Highest-quality distilled rule
+
+The strongest global rule is also the largest cluster:
+
+```text
+Cluster 1
+Support: 171 counterfactuals (42.86%)
+Quality score: 0.7573
+Average distance: 0.0472
+
+Rule:
+capital_gain tends to increase
+```
+
+This does **not** mean increasing capital gain causes higher income in the real world.
+
+It means that, among the feasible counterfactuals produced for this model and dataset, increasing `capital_gain` is the most common low-distance intervention associated with crossing the model's prediction boundary.
+
+## Key Takeaways
+
+**1. Counterfactual generation is broadly successful.**
+Valid semantic counterfactuals were generated for **96%** of the shared explanation sample.
+
+**2. Most counterfactuals are compact.**
+Only **1.63 features change on average**, supporting the goal of producing understandable local interventions.
+
+**3. Counterfactual behavior has measurable structure.**
+The final intervention representation reaches a **0.4142 silhouette score**, showing that recurring counterfactual strategies form distinguishable groups.
+
+**4. Distillation compresses hundreds of explanations into six global patterns.**
+The pipeline reduces **399 local counterfactuals to 6 interpretable rules**.
+
+**5. SHAP and counterfactual distillation reveal complementary behavior.**
+Features such as marital status and education dominate global SHAP importance, while the counterfactual clusters emphasize actionable intervention patterns involving capital gain, working hours, occupation, workclass, and capital loss.
+
+> **Interpretation note:** CounterDistill explains the behavior of a trained predictive model under hypothetical feature changes. Counterfactuals and distilled rules are descriptive model explanations, not causal conclusions or real-world recommendations.
 
 ---
 
