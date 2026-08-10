@@ -448,59 +448,29 @@ def rule_metrics(
     }
 
 
-def latest_model_metrics(
+def model_metrics_for_run(
     tracking_uri: str,
-    experiment_name: str,
+    run_id: str,
     model_name: str,
 ) -> dict[str, Any]:
-    """Return metrics from the most relevant recent MLflow model run."""
+    """Return metrics for the exact MLflow run used for explanations."""
     mlflow.set_tracking_uri(tracking_uri)
 
     client = MlflowClient()
 
-    experiment = client.get_experiment_by_name(experiment_name)
-
-    if experiment is None:
-        raise ValueError(f"MLflow experiment {experiment_name!r} was not found.")
-
-    filters = [
-        (
-            "tags.project = 'counterdistill' "
-            f"and tags.model_class = '{model_name}' "
-            "and tags.stage = 'hyperparameter_tuning'"
-        ),
-        (
-            "tags.project = 'counterdistill' "
-            f"and tags.model_class = '{model_name}' "
-            "and tags.stage = 'training'"
-        ),
-    ]
-
-    selected_run = None
-
-    for filter_string in filters:
-        runs = client.search_runs(
-            [experiment.experiment_id],
-            filter_string=filter_string,
-            max_results=20,
-        )
-
-        for run in runs:
-            metrics = run.data.metrics
-
-            if "test_accuracy" in metrics or "accuracy" in metrics:
-                selected_run = run
-                break
-
-        if selected_run is not None:
-            break
-
-    if selected_run is None:
-        raise ValueError("No completed model run with evaluation metrics was found.")
+    selected_run = client.get_run(run_id)
 
     metrics = selected_run.data.metrics
     params = selected_run.data.params
     tags = selected_run.data.tags
+
+    tracked_model = tags.get("model_class")
+
+    if tracked_model is not None and tracked_model != model_name:
+        raise ValueError(
+            "MLflow model provenance mismatch: "
+            f"expected {model_name!r}, found {tracked_model!r}."
+        )
 
     accuracy = metrics.get(
         "test_accuracy",
@@ -523,7 +493,7 @@ def latest_model_metrics(
             feature_count = float(raw_feature_count)
 
     return {
-        "mlflow_run_id": (selected_run.info.run_id),
+        "mlflow_run_id": selected_run.info.run_id,
         "stage": tags.get("stage"),
         "model_name": model_name,
         "accuracy": accuracy,
@@ -764,9 +734,9 @@ def generate_report(
         # Model metrics
         # ---------------------------------------------
 
-        model_summary = latest_model_metrics(
+        model_summary = model_metrics_for_run(
             tracking_uri=tracking_uri,
-            experiment_name=experiment_name,
+            run_id=resolved_run_id,
             model_name=resolved_model_name,
         )
 
