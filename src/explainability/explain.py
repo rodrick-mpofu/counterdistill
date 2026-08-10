@@ -66,6 +66,8 @@ def main(cfg: DictConfig) -> None:
 
     model_name = cfg.model._class_.split(".")[-1]
 
+    mlflow.set_tracking_uri(str(cfg.mlflow.tracking_uri))
+
     provided_run_id = cfg.mlflow.get("run_id")
 
     run_id = (

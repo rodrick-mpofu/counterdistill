@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 
 from src.clustering.kmeans import CounterfactualKMeans
@@ -130,12 +131,41 @@ def aggregate_counterfactuals(
     )
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse aggregation command-line arguments."""
+    parser = argparse.ArgumentParser(
+        description=("Aggregate CounterDistill counterfactuals into global rules.")
+    )
+
+    parser.add_argument(
+        "--run-id",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--model-name",
+        required=True,
+    )
+
+    parser.add_argument(
+        "--n-clusters",
+        type=int,
+        default=6,
+    )
+
+    return parser.parse_args()
+
+
 def main() -> None:
-    """Run aggregation for the current validated local explanation run."""
+    """Run counterfactual aggregation."""
+    logging.basicConfig(level=logging.INFO)
+
+    args = parse_args()
+
     aggregate_counterfactuals(
-        run_id="local-20260808-220006",
-        model_name="RandomForestClassifier",
-        n_clusters=6,
+        run_id=args.run_id,
+        model_name=args.model_name,
+        n_clusters=args.n_clusters,
     )
 
 
