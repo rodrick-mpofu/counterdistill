@@ -1,233 +1,181 @@
 # CounterDistill
 
-## From Local Counterfactual Explanations to Global Interpretability
+## Distilling Local Counterfactual Explanations into Global Interpretable Rules
 
-**CounterDistill** is an end-to-end machine learning engineering and explainable AI project that explores how local counterfactual explanations can be aggregated and distilled into more global, human-readable patterns.
+**CounterDistill** is an end-to-end machine learning engineering and explainable AI project that investigates whether collections of local counterfactual explanations can be aggregated into concise, human-readable global patterns.
 
 The project combines:
 
-* configurable feature engineering with **Polars**
-* model training with **scikit-learn**, **XGBoost**, and **LightGBM**
-* experiment tracking with **MLflow**
-* hyperparameter optimization with **Optuna**
-* local explanations with **DiCE** and **SHAP**
-* analytical storage with **DuckDB**
-* configuration management with **Hydra**
-* reproducible environments with **uv**
-* containerization with **Docker**
-* a future global distillation layer based on counterfactual aggregation and interpretable models
+* **Polars** for train-aware feature engineering
+* **scikit-learn**, **XGBoost**, and **LightGBM** for modeling
+* **DiCE** for semantic counterfactual explanations
+* **SHAP** for feature-attribution explanations
+* **K-Means** for counterfactual intervention clustering
+* custom global rule extraction and evaluation
+* **DuckDB** for analytical persistence
+* **MLflow** for experiment tracking and model artifacts
+* **Optuna** for hyperparameter optimization
+* **Hydra** for configuration management
+* **Streamlit** for interactive exploration
+* **Docker / Docker Compose** for reproducible execution
+* **uv** for Python dependency management
+* **pytest**, **Ruff**, and **mypy** for engineering quality
 
-> **Current status:** the supervised training, train-aware feature engineering, DiCE counterfactual generation, SHAP explanation pipeline, MLflow integration, and DuckDB persistence are implemented. The counterfactual aggregation/distillation and dashboard layers are the next major stages.
+> Counterfactual explanations and distilled rules describe **model behavior**. They should not be interpreted as causal effects or real-world prescriptions.
 
 ---
 
-## Why CounterDistill?
+# Project Motivation
 
-Modern machine learning models can be accurate while remaining difficult to interpret.
+Modern machine-learning models can make strong predictions while remaining difficult to understand.
 
-Local explanation methods help explain individual predictions:
+Local explanation methods help answer questions about individual predictions:
 
-* **SHAP** estimates how strongly each model feature contributed to a prediction.
-* **Counterfactual explanations** answer a more actionable question:
+* **SHAP** estimates how individual features influenced a model prediction.
+* **Counterfactual explanations** ask what feasible feature changes could alter that prediction.
 
-> *What would need to change for the model to make a different prediction?*
-
-A local counterfactual might say:
+For example:
 
 ```text
 Original prediction: <= $50K
 
-Change:
+Possible counterfactual changes:
+    education: HS-grad -> Bachelors
     occupation: Tech-support -> Exec-managerial
-    hours_per_week: 40 -> 47
+    capital_gain: 0 -> 5000
 
 Counterfactual prediction: > $50K
 ```
 
-That is useful for one instance, but a dataset may contain hundreds or thousands of these explanations.
+A single explanation can be useful, but hundreds of explanations quickly become difficult to inspect manually.
 
 CounterDistill asks a larger question:
 
-> **Can many local counterfactual explanations be aggregated into concise global explanations of model behavior?**
+> **Can recurring intervention patterns across many local counterfactual explanations be distilled into global explanations of model behavior?**
 
-The long-term goal is to transform a large collection of local explanations into patterns such as:
+The project therefore moves beyond generating explanations and builds a complete pipeline for:
 
 ```text
-Cluster A
---------
-Higher-income predictions are frequently reached through:
-- increased working hours
-- higher education levels
-- movement toward managerial occupations
-
-Cluster B
---------
-For younger individuals, education-related changes dominate
-the model's counterfactual decision paths.
+Local Counterfactuals
+        ↓
+Semantic Change Encoding
+        ↓
+Counterfactual Clustering
+        ↓
+Cluster Profiling
+        ↓
+Global Rule Extraction
+        ↓
+Rule Quality Evaluation
+        ↓
+Interactive Exploration
 ```
 
 ---
 
-# System Overview
+# Current Results
+
+A validated Random Forest run on the UCI Adult Income dataset currently produces:
+
+| Metric                      | Result |
+| --------------------------- | -----: |
+| Training rows               | 26,048 |
+| Test rows                   |  6,513 |
+| Encoded model features      |    126 |
+| Random Forest test accuracy | ~0.860 |
+| Explained instances         |    100 |
+| Stored counterfactuals      |    404 |
+| Stored SHAP values          | 12,600 |
+| Counterfactual clusters     |      6 |
+| Distilled global rules      |      6 |
+| K-Means silhouette score    | 0.3726 |
+
+The six counterfactual clusters capture recurring intervention patterns involving features such as:
+
+* capital gain
+* education
+* occupation
+* weekly working hours
+* capital loss
+
+The largest discovered pattern represents roughly **45% of the generated counterfactuals** and is dominated by increases in `capital_gain`.
+
+---
+
+# System Architecture
 
 ```mermaid
 flowchart TD
     A[UCI Adult Income Dataset] --> B[AdultIncomeLoader]
     B --> C[Train / Test Split]
 
-    C --> D[FeatureEngineer.fit on Train]
-    D --> E[FeatureEngineer.transform Train]
-    D --> F[FeatureEngineer.transform Test]
+    C --> D[FeatureEngineer]
+    D --> E[126-Feature Model Space]
 
-    E --> G[Encoded Model Feature Space]
-    F --> G
+    E --> F[ML Model]
+    F --> G[Predictions]
 
-    G --> H[ML Model]
-    H --> I[Predictions]
+    F --> H[MLflow]
+    E --> I[SHAP]
 
-    H --> J[SHAP Explainer]
-    C --> K[Raw Test Features]
-    K --> L[DiCE Explainer]
+    C --> J[Raw Semantic Features]
+    J --> K[DiCE]
+    K --> L[FeatureEngineeringModelAdapter]
+    L --> D
 
-    L --> M[FeatureEngineeringModelAdapter]
-    M --> D
-    D --> H
+    I --> M[SHAP Values]
+    K --> N[Semantic Counterfactuals]
 
-    J --> N[SHAP Values]
-    L --> O[Counterfactual Explanations]
+    M --> O[(DuckDB)]
+    N --> O
 
-    N --> P[DuckDB]
-    O --> P
+    O --> P[CounterfactualEncoder]
+    P --> Q[K-Means]
+    Q --> R[Cluster Profiler]
+    R --> S[Rule Extractor]
+    S --> T[Rule Evaluator]
 
-    H --> Q[MLflow]
-    D --> Q
+    Q --> O
+    T --> O
 
-    P --> R[Counterfactual Aggregation]
-    R --> S[Clustering]
-    S --> T[Interpretable Distillation]
-    T --> U[Global Explanations]
+    O --> U[Streamlit Dashboard]
 ```
 
 ---
 
-# Explainability Architecture
+# Feature Engineering
 
-SHAP and DiCE operate at **different levels of the pipeline**.
-
-This distinction is important.
-
-## SHAP
-
-SHAP explains the exact encoded representation consumed by the trained model.
-
-```mermaid
-flowchart LR
-    A[Raw Adult Features] --> B[FeatureEngineer]
-    B --> C[118 Encoded Features]
-    C --> D[RandomForest / XGBoost / LightGBM]
-    D --> E[SHAP]
-    E --> F[Feature Contributions]
-```
-
-For the current Random Forest pipeline, SHAP operates on the **118-feature model representation**.
-
-Example output:
-
-```text
-instance_id | feature_name                  | shap_value
-------------|-------------------------------|-----------
-0           | age                           | 0.031
-0           | occupation_Exec-managerial    | 0.087
-0           | capital_gain                  | 0.194
-...
-```
-
----
-
-## DiCE
-
-DiCE operates in the **original semantic feature space** so counterfactuals remain understandable.
-
-```mermaid
-flowchart LR
-    A[Raw Feature Query] --> B[DiCE]
-    B --> C[Candidate Counterfactual]
-
-    C --> D[FeatureEngineeringModelAdapter]
-    D --> E[FeatureEngineer.transform]
-    E --> F[118 Encoded Features]
-    F --> G[Trained Model]
-    G --> H[Prediction Probability]
-
-    H --> B
-```
-
-Instead of producing a counterfactual such as:
-
-```text
-occupation_Tech-support = 0
-occupation_Exec-managerial = 1
-age_group_young_adult = 0
-...
-```
-
-CounterDistill preserves explanations like:
-
-```json
-{
-  "age": 37,
-  "education": "Masters",
-  "occupation": "Exec-managerial",
-  "hours_per_week": 45
-}
-```
-
-This representation is much more useful for downstream distillation.
-
----
-
-# Feature Engineering Pipeline
-
-The feature engineering layer uses **Polars** and follows a train-aware `fit` / `transform` workflow.
+CounterDistill uses a train-aware Polars feature-engineering pipeline.
 
 ```mermaid
 flowchart TD
-    A[Raw Training Data] --> B[Clean Data]
-    B --> C[Create Derived Features]
+    A[Raw Training Data] --> B[Clean Values]
+    B --> C[Derived Features]
     C --> D[Learn Scaling Statistics]
-    C --> E[One-Hot Encode]
+    C --> E[Categorical Encoding]
     D --> E
-
     E --> F[Learn Training Feature Schema]
 
-    G[Validation / Test / Counterfactual Data] --> H[Apply Same Cleaning]
-    H --> I[Create Same Derived Features]
+    G[Test / Validation / Counterfactual Data] --> H[Apply Same Cleaning]
+    H --> I[Create Derived Features]
     I --> J[Apply Learned Scaling]
-    J --> K[One-Hot Encode]
+    J --> K[Encode Categories]
     K --> L[Align to Training Schema]
     L --> M[Model Input]
 ```
 
-### Derived features
+Derived features include:
 
-The current pipeline creates:
+| Feature           | Description                              |
+| ----------------- | ---------------------------------------- |
+| `age_group`       | bucketed age representation              |
+| `hours_category`  | grouped weekly working hours             |
+| `education_level` | grouped education level                  |
+| `capital_ratio`   | derived capital gain/loss representation |
 
-| Feature           | Description                        |
-| ----------------- | ---------------------------------- |
-| `age_group`       | Bucketed representation of age     |
-| `hours_category`  | Working-hours category             |
-| `education_level` | Grouped education level            |
-| `capital_ratio`   | Relative capital gain/loss feature |
+The current pipeline produces **126 model features**.
 
-Categorical columns are one-hot encoded using Polars.
-
-The current Random Forest pipeline produces **118 model features**.
-
-### Why `fit()` / `transform()` matters
-
-A previous implementation concatenated train and test data before one-hot encoding to guarantee matching columns.
-
-CounterDistill now learns the feature schema on **training data only**:
+Feature engineering follows:
 
 ```python
 engine = FeatureEngineer(
@@ -239,42 +187,17 @@ x_train_fe = engine.fit_transform()
 x_test_fe = engine.transform(x_test)
 ```
 
-This prevents test-set information from leaking into preprocessing while still guaranteeing identical model columns.
+Only the training data is used to learn preprocessing statistics and the encoded feature schema.
+
+This prevents test-set leakage while ensuring that training, validation, test, SHAP, and counterfactual model inputs remain compatible.
 
 ---
 
-# Training Pipeline
+# Model Training
 
-```mermaid
-flowchart TD
-    A[Hydra Configuration] --> B[Load Dataset]
-    B --> C[Stratified Train/Test Split]
+Training is configured through Hydra.
 
-    C --> D[FeatureEngineer.fit]
-    D --> E[Train Features]
-    D --> F[Test Features]
-
-    E --> G[Model Training]
-    F --> H[Evaluation]
-    G --> H
-
-    H --> I[Accuracy + Classification Report]
-    G --> J[Feature Importance]
-
-    G --> K[MLflow Model Artifact]
-    I --> L[MLflow Metrics]
-    J --> M[MLflow Artifact]
-    D --> N[Feature Schema Artifact]
-
-    K --> O[Experiment Run]
-    L --> O
-    M --> O
-    N --> O
-```
-
-Models are configured through Hydra.
-
-Example:
+Example Random Forest configuration:
 
 ```yaml
 _class_: sklearn.ensemble.RandomForestClassifier
@@ -286,160 +209,342 @@ random_state: 42
 n_jobs: -1
 ```
 
-Run a Random Forest experiment with:
+Run training with:
 
 ```bash
 uv run python -m src.modeling.train model=random_forest
 ```
 
-Hydra makes it possible to switch model configurations without rewriting training code.
+The training workflow logs:
+
+* model parameters
+* data parameters
+* accuracy
+* classification metrics
+* feature count
+* feature importance
+* preprocessing schema
+* resolved Hydra configuration
+* trained model artifact
+
+to MLflow.
 
 ---
 
-# Explainability Pipeline
+# MLflow Experiment Tracking
 
-Run:
-
-```bash
-uv run python -m src.explainability.explain model=random_forest
-```
-
-The pipeline:
-
-```mermaid
-sequenceDiagram
-    participant D as DataLoader
-    participant F as FeatureEngineer
-    participant M as ML Model
-    participant C as DiCE
-    participant S as SHAP
-    participant DB as DuckDB
-
-    D->>F: training split
-    F->>F: fit preprocessing
-    F->>M: encoded training features
-    M->>M: train / load model
-
-    D->>C: raw test instances
-    C->>F: candidate raw counterfactuals
-    F->>M: encoded candidates
-    M-->>C: prediction probabilities
-    C->>DB: semantic counterfactuals
-
-    F->>S: encoded test instances
-    M->>S: trained model
-    S->>DB: SHAP values
-```
-
-A successful local run currently produces results on the order of:
+The default local tracking backend is:
 
 ```text
-FeatureEngineer fitted on 26,048 training rows
-118 encoded model features
-
-DiCE:
-~500 counterfactual explanations for 100 sampled instances
-
-SHAP:
-100 instances x 118 features
-= 11,800 SHAP records
+sqlite:///database/mlflow.db
 ```
 
-Exact results depend on the configured model, seed, and counterfactual search behavior.
+Start the MLflow server with:
+
+```bash
+uv run mlflow server \
+    --backend-store-uri sqlite:///database/mlflow.db \
+    --host 127.0.0.1 \
+    --port 5000 \
+    --workers 1
+```
+
+Then open:
+
+```text
+http://localhost:5000
+```
+
+MLflow is used for training and hyperparameter optimization.
+
+DuckDB is used separately for explainability and distillation artifacts.
+
+These systems intentionally serve different purposes:
+
+```text
+MLflow
+├── experiment parameters
+├── training metrics
+├── tuning trials
+├── model artifacts
+└── preprocessing artifacts
+
+DuckDB
+├── counterfactuals
+├── SHAP values
+├── cluster assignments
+├── global rules
+└── explainability provenance
+```
+
+CounterDistill's semantic explanation `run_id` values are project-level identifiers and should not be assumed to be identical to MLflow run IDs.
+
+---
+
+# Hyperparameter Optimization
+
+Optuna is integrated with MLflow for model tuning.
+
+The tuning architecture uses one parent MLflow run for the study and nested child runs for individual trials:
+
+```text
+Optuna Study / MLflow Parent
+│
+├── trial-000
+│   ├── sampled parameters
+│   └── validation metrics
+│
+├── trial-001
+│
+├── trial-002
+│
+└── ...
+        ↓
+    Best Trial
+        ↓
+Retrain on Full Training Split
+        ↓
+Evaluate on Held-Out Test Set
+        ↓
+Log Final Model
+```
+
+Run a tuning study with:
+
+```bash
+uv run python -m src.modeling.tune \
+    model=random_forest
+```
+
+For a shorter smoke test:
+
+```bash
+uv run python -m src.modeling.tune \
+    model=random_forest \
+    optuna.n_trials=5 \
+    optuna.timeout=300
+```
+
+Optuna validation data is kept separate from the final held-out test set.
+
+Feature engineering is fitted only on the tuning subset during optimization. After the best hyperparameters are selected, preprocessing and the model are refitted using the complete training split before final test evaluation.
+
+---
+
+# Explainability
+
+CounterDistill deliberately operates SHAP and DiCE at different levels of the pipeline.
+
+## SHAP
+
+SHAP explains the exact encoded model representation.
+
+```mermaid
+flowchart LR
+    A[Raw Features] --> B[FeatureEngineer]
+    B --> C[126 Model Features]
+    C --> D[ML Model]
+    D --> E[SHAP]
+    E --> F[Feature Contributions]
+```
+
+For 100 explained instances:
+
+```text
+100 instances × 126 features
+= 12,600 stored SHAP values
+```
+
+Global SHAP importance can then be computed directly from DuckDB.
+
+---
+
+## DiCE
+
+DiCE operates in the original semantic feature space.
+
+```mermaid
+flowchart LR
+    A[Raw Instance] --> B[DiCE]
+    B --> C[Candidate Counterfactual]
+    C --> D[Model Adapter]
+    D --> E[FeatureEngineer]
+    E --> F[126 Model Features]
+    F --> G[Trained Model]
+    G --> H[Prediction Probability]
+    H --> B
+```
+
+This preserves explanations such as:
+
+```json
+{
+  "education": "Bachelors",
+  "occupation": "Exec-managerial",
+  "hours_per_week": 45,
+  "capital_gain": 5000
+}
+```
+
+instead of exposing changes to anonymous one-hot model columns.
+
+### Counterfactual feasibility
+
+The current semantic counterfactual pipeline constrains generated explanations to improve interpretability.
+
+Examples include:
+
+* immutable sensitive attributes are not varied
+* dependent education fields remain consistent
+* education cannot decrease
+* invalid or unknown occupation/workclass destinations are rejected
+* selected numerical and categorical features define the actionable search space
 
 ---
 
 # Counterfactual Distillation
 
-The main research/engineering goal of the project begins after counterfactual generation.
+The central contribution of CounterDistill is the aggregation layer.
 
-```mermaid
-flowchart TD
-    A[Many Local Counterfactuals] --> B[Extract Feature Changes]
+## 1. Intervention Encoding
 
-    B --> C[Numeric Change Vectors]
-    B --> D[Categorical Transitions]
+`CounterfactualEncoder` represents **what changed**, rather than clustering people based on their original attributes.
 
-    C --> E[Counterfactual Representation]
-    D --> E
+Numerical interventions are encoded using:
 
-    E --> F[Clustering]
-    F --> G[Counterfactual Archetypes]
-
-    G --> H[Rule Extraction]
-    G --> I[Interpretable Surrogate Model]
-
-    H --> J[Global Explanation]
-    I --> J
-
-    J --> K[Model Behavior Summary]
+```text
+normalized signed delta
++
+changed indicator
 ```
 
-Potential distilled outputs include:
+Categorical interventions are encoded using:
 
-* common feature-change patterns
-* counterfactual archetypes
-* cluster-level explanations
-* decision rules
-* small decision trees
-* feature transition matrices
-* global summaries of what tends to flip predictions
+```text
+changed indicator
++
+source → destination transition
+```
 
-This layer is intentionally separated from the model explanation layer so multiple explanation and clustering strategies can be compared.
+Example:
+
+```text
+education:
+HS-grad → Bachelors
+
+occupation:
+Tech-support → Exec-managerial
+
+capital_gain:
+0 → 5000
+```
+
+becomes a numerical intervention vector suitable for clustering.
 
 ---
 
-# Data Storage with DuckDB
+## 2. Counterfactual Clustering
 
-CounterDistill uses **DuckDB** as a lightweight analytical database.
+Encoded interventions are clustered using K-Means.
 
-```mermaid
-erDiagram
-    COUNTERFACTUALS {
-        bigint id
-        varchar model_name
-        varchar run_id
-        bigint instance_id
-        json original_features
-        json counterfactual_features
-        integer target_class
-        integer original_class
-        double distance
-        timestamp created_at
-    }
+The currently selected configuration uses:
 
-    SHAP_VALUES {
-        bigint id
-        varchar model_name
-        varchar run_id
-        bigint instance_id
-        varchar feature_name
-        double shap_value
-        double feature_value
-        timestamp created_at
-    }
-
-    METRICS {
-        bigint id
-        varchar model_name
-        varchar metric_name
-        double metric_value
-        varchar run_id
-        timestamp created_at
-    }
-
-    EXPLANATIONS {
-        bigint id
-        varchar model_name
-        varchar run_id
-        bigint instance_id
-        varchar explanation_type
-        json explanation
-        timestamp created_at
-    }
+```yaml
+n_clusters: 6
+random_state: 42
+n_init: 10
 ```
 
-Counterfactuals are stored using semantic JSON rather than anonymous encoded vectors.
+The validated six-cluster solution produces a silhouette score of approximately:
+
+```text
+0.3726
+```
+
+---
+
+## 3. Cluster Profiling
+
+Each cluster is summarized using:
+
+* cluster size
+* corpus share
+* average counterfactual distance
+* feature change rates
+* normalized numeric deltas
+* dominant categorical transitions
+
+This turns numerical clusters into interpretable intervention archetypes.
+
+---
+
+## 4. Global Rule Extraction
+
+Cluster profiles are transformed into human-readable rules.
+
+Example patterns include:
+
+```text
+capital_gain tends to increase
+
+education changes
+AND HS-grad → Bachelors
+
+capital_gain changes
+AND occupation changes
+
+hours_per_week tends to decrease
+AND capital_gain changes
+```
+
+These rules summarize recurring model counterfactual behavior.
+
+They are **descriptive rather than causal**.
+
+---
+
+## 5. Rule Evaluation
+
+Distilled rules are evaluated using three components:
+
+```text
+40% coverage
+30% compactness
+30% counterfactual proximity
+```
+
+Higher-quality rules therefore:
+
+* explain a larger fraction of counterfactuals
+* remain concise
+* are based on relatively close counterfactuals
+
+Pairwise Jaccard similarity is also available for comparing rule redundancy.
+
+---
+
+# DuckDB Persistence
+
+CounterDistill stores explainability artifacts in:
+
+```text
+database/counterdistill.db
+```
+
+Important tables include:
+
+```text
+counterfactuals
+shap_values
+metrics
+explanations
+counterfactual_clusters
+global_rules
+```
+
+The persistence layer keeps model and run provenance alongside explanation artifacts.
+
+Counterfactuals are stored using semantic JSON, allowing later analysis without reconstructing the model's one-hot representation.
 
 Example:
 
@@ -453,302 +558,140 @@ Example:
 }
 ```
 
-The `run_id` field connects explanation artifacts to the MLflow model run that produced them.
-
-Default database location:
-
-```text
-database/counterdistill.db
-```
-
 ---
 
-# MLflow Experiment Tracking
+# Streamlit Dashboard
 
-MLflow tracks:
+CounterDistill includes an interactive dashboard for inspecting persisted explanation artifacts.
 
-* model parameters
-* evaluation metrics
-* trained model artifacts
-* classification metrics
-* feature importance
-* preprocessing feature schema
-* experiment/run metadata
-
-```mermaid
-flowchart LR
-    A[Hydra Config] --> B[Training Run]
-    B --> C[MLflow]
-
-    C --> D[Parameters]
-    C --> E[Metrics]
-    C --> F[Model]
-    C --> G[Feature Importance]
-    C --> H[Preprocessing Schema]
-
-    I[DiCE / SHAP] --> J[DuckDB]
-    F --> I
-
-    C -. run_id .-> J
-```
-
-This makes explanations reproducible against a specific trained model.
-
----
-
-# Hydra Configuration
-
-Configuration is organized under `configs/`.
-
-```text
-configs/
-├── config.yaml
-├── data/
-│   └── adult_income.yaml
-├── feature_engineering/
-│   └── default.yaml
-├── model/
-│   └── random_forest.yaml
-├── clustering/
-│   └── ...
-├── mlflow/
-│   └── default.yaml
-└── optuna/
-    └── default.yaml
-```
-
-The global configuration currently controls values such as:
-
-```yaml
-seed: 42
-device: cpu
-
-batch_size: 1000
-num_counterfactuals: 100
-counterfactual_encoding: standard
-
-data_dir: data
-database_dir: database
-output_dir: outputs
-```
-
-Hydra overrides can be supplied from the CLI:
+Start it locally with:
 
 ```bash
-uv run python -m src.modeling.train \
+uv run streamlit run app/app.py
+```
+
+The dashboard currently provides four views.
+
+## Overview
+
+Displays:
+
+* counterfactual count
+* explained instances
+* SHAP value count
+* counterfactual clusters
+* global rules
+* global SHAP importance
+* top distilled rules
+
+## Counterfactual Explorer
+
+Supports:
+
+* cluster filtering
+* counterfactual-distance filtering
+* instance selection
+* individual counterfactual inspection
+* semantic feature-change comparison
+
+## Global Rules
+
+Supports:
+
+* rule ranking
+* quality filtering
+* coverage comparison
+* support comparison
+* average counterfactual distance
+* human-readable rule cards
+
+## SHAP Explorer
+
+Supports:
+
+* global mean absolute SHAP importance
+* instance-level explanations
+* positive and negative feature contributions
+* local feature tables
+
+---
+
+# Docker
+
+Docker files are kept under:
+
+```text
+docker/
+├── Dockerfile
+├── Dockerfile.dockerignore
+└── docker-compose.yml
+```
+
+The same project image supports training, tuning, explainability, aggregation, MLflow, and the Streamlit dashboard.
+
+## Build
+
+From the repository root:
+
+```bash
+docker compose \
+    -f docker/docker-compose.yml \
+    build
+```
+
+## Start MLflow and Streamlit
+
+```bash
+docker compose \
+    -f docker/docker-compose.yml \
+    up mlflow dashboard
+```
+
+Services are exposed at:
+
+```text
+MLflow:    http://localhost:5000
+Dashboard: http://localhost:8501
+```
+
+## Train inside Docker
+
+```bash
+docker compose \
+    -f docker/docker-compose.yml \
+    run --rm counterdistill \
+    python -m src.modeling.train \
+    model=random_forest
+```
+
+## Run Optuna inside Docker
+
+```bash
+docker compose \
+    -f docker/docker-compose.yml \
+    run --rm counterdistill \
+    python -m src.modeling.tune \
     model=random_forest \
-    seed=123
-```
-
----
-
-# Optuna
-
-Optuna is included for automated hyperparameter optimization.
-
-Conceptually:
-
-```mermaid
-flowchart LR
-    A[Optuna Study] --> B[Sample Hyperparameters]
-    B --> C[Hydra / Training Pipeline]
-    C --> D[Validation Metric]
-    D --> A
-
-    A --> E[Best Trial]
-    E --> F[Final Model]
-    F --> G[MLflow]
-```
-
-The optimization layer is intended to compare model configurations while keeping preprocessing and experiment tracking reproducible.
-
----
-
-# Docker Architecture
-
-Docker provides a reproducible runtime for the project.
-
-The recommended container layout is:
-
-```mermaid
-flowchart TD
-    A[Host Machine] --> B[Docker Compose]
-
-    B --> C[CounterDistill App Container]
-    B --> D[MLflow Service]
-    B --> E[Dashboard Service]
-
-    C --> F[Python / uv Environment]
-    F --> G[Training]
-    F --> H[Explainability]
-    F --> I[Distillation]
-
-    C --> J[(Mounted Data)]
-    C --> K[(DuckDB Volume)]
-    D --> L[(MLflow Artifacts)]
-    E --> K
-
-    G --> D
-    H --> K
-    I --> K
-```
-
-## Recommended Dockerfile
-
-The repository can use a single project image for training, explainability, distillation, testing, and dashboard commands.
-
-```dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-COPY pyproject.toml uv.lock ./
-
-RUN uv sync --frozen --no-dev
-
-COPY . .
-
-ENV PATH="/app/.venv/bin:$PATH"
-
-CMD ["python", "-m", "src.modeling.train"]
-```
-
-For development, install the dev dependency group:
-
-```dockerfile
-RUN uv sync --frozen
-```
-
-## Recommended `.dockerignore`
-
-```text
-.git
-.github
-.venv
-__pycache__
-*.pyc
-
-data/raw
-database
-mlruns
-outputs
-
-.pytest_cache
-.mypy_cache
-.ruff_cache
-htmlcov
-.coverage
-```
-
-## Recommended Docker Compose
-
-A useful Compose setup separates the project runtime from experiment tracking.
-
-```yaml
-services:
-  counterdistill:
-    build: .
-    working_dir: /app
-    volumes:
-      - ./data:/app/data
-      - ./database:/app/database
-      - ./outputs:/app/outputs
-    environment:
-      - PYTHONUNBUFFERED=1
-
-  mlflow:
-    build: .
-    command:
-      - mlflow
-      - server
-      - --host
-      - 0.0.0.0
-      - --port
-      - "5000"
-      - --backend-store-uri
-      - sqlite:////app/database/mlflow.db
-      - --default-artifact-root
-      - /app/mlartifacts
-    ports:
-      - "5000:5000"
-    volumes:
-      - ./database:/app/database
-      - ./mlartifacts:/app/mlartifacts
-
-  dashboard:
-    build: .
-    command:
-      - streamlit
-      - run
-      - src/dashboard/app.py
-      - --server.address=0.0.0.0
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./database:/app/database
-      - ./outputs:/app/outputs
-```
-
-> The Docker and Compose snippets above describe the intended containerized project setup. Adjust the dashboard path and MLflow configuration as those components evolve.
-
----
-
-# Running with Docker
-
-## Build the image
-
-```bash
-docker build -t counterdistill .
-```
-
-## Train a model
-
-```bash
-docker run --rm \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/database:/app/database" \
-  counterdistill \
-  python -m src.modeling.train model=random_forest
-```
-
-On PowerShell:
-
-```powershell
-docker run --rm `
-  -v "${PWD}/data:/app/data" `
-  -v "${PWD}/database:/app/database" `
-  counterdistill `
-  python -m src.modeling.train model=random_forest
+    optuna.n_trials=5
 ```
 
 ## Generate explanations
 
 ```bash
-docker run --rm \
-  -v "$(pwd)/data:/app/data" \
-  -v "$(pwd)/database:/app/database" \
-  counterdistill \
-  python -m src.explainability.explain model=random_forest
+docker compose \
+    -f docker/docker-compose.yml \
+    run --rm counterdistill \
+    python -m src.explainability.explain \
+    model=random_forest
 ```
 
-## Start services with Compose
+## Run counterfactual aggregation
 
 ```bash
-docker compose up --build
-```
-
-MLflow:
-
-```text
-http://localhost:5000
-```
-
-Streamlit dashboard:
-
-```text
-http://localhost:8501
+docker compose \
+    -f docker/docker-compose.yml \
+    run --rm counterdistill \
+    python -m src.aggregation.aggregate
 ```
 
 ---
@@ -760,7 +703,7 @@ http://localhost:8501
 * Python 3.12+
 * uv
 * Git
-* Docker / Docker Compose optional
+* Docker Desktop / Docker Compose for containerized execution
 
 Clone the repository:
 
@@ -775,286 +718,62 @@ Install dependencies:
 uv sync --dev
 ```
 
-Activate the environment if desired.
+---
 
-### macOS / Linux
+# Reproducing the Pipeline
+
+A complete local workflow is:
+
+## 1. Train
 
 ```bash
-source .venv/bin/activate
+uv run python -m src.modeling.train \
+    model=random_forest
 ```
 
-### Windows PowerShell
+## 2. Tune
 
-```powershell
-.venv\Scripts\Activate.ps1
-```
-
-### Git Bash
+Optional:
 
 ```bash
-source .venv/Scripts/activate
+uv run python -m src.modeling.tune \
+    model=random_forest
 ```
 
----
-
-# Quick Start
-
-## 1. Prepare the Adult Income dataset
-
-The loader automatically downloads the UCI Adult dataset when the raw file is missing.
-
-You can trigger preprocessing through the training workflow.
-
-## 2. Train a model
+## 3. Generate explanations
 
 ```bash
-uv run python -m src.modeling.train model=random_forest
+uv run python -m src.explainability.explain \
+    model=random_forest
 ```
 
-## 3. Generate DiCE + SHAP explanations
+## 4. Aggregate counterfactuals
 
 ```bash
-uv run python -m src.explainability.explain model=random_forest
+uv run python -m src.aggregation.aggregate
 ```
 
-Without an MLflow `run_id`, the explanation workflow trains a compatible local model.
-
-With a configured run ID, the pipeline can load the corresponding tracked model.
-
-## 4. Inspect the DuckDB database
-
-Using the DuckDB CLI:
+## 5. Explore results
 
 ```bash
-duckdb database/counterdistill.db
+uv run streamlit run app/app.py
 ```
 
-Example queries:
+## 6. Inspect MLflow
 
-```sql
-SELECT COUNT(*)
-FROM counterfactuals;
+```bash
+uv run mlflow server \
+    --backend-store-uri sqlite:///database/mlflow.db \
+    --host 127.0.0.1 \
+    --port 5000 \
+    --workers 1
 ```
-
-```sql
-SELECT *
-FROM counterfactuals
-LIMIT 5;
-```
-
-```sql
-SELECT feature_name, AVG(ABS(shap_value)) AS mean_abs_shap
-FROM shap_values
-GROUP BY feature_name
-ORDER BY mean_abs_shap DESC
-LIMIT 20;
-```
-
----
-
-# Project Structure
-
-```text
-counterdistill/
-│
-├── configs/
-│   ├── config.yaml
-│   ├── data/
-│   ├── feature_engineering/
-│   ├── model/
-│   ├── clustering/
-│   ├── mlflow/
-│   └── optuna/
-│
-├── data/
-│   ├── raw/
-│   └── processed/
-│
-├── database/
-│   └── counterdistill.db
-│
-├── src/
-│   ├── ingestion/
-│   │   └── data_loader.py
-│   │
-│   ├── features/
-│   │   └── feature_engineering.py
-│   │
-│   ├── modeling/
-│   │   └── train.py
-│   │
-│   ├── explainability/
-│   │   ├── dice.py
-│   │   ├── shap.py
-│   │   └── explain.py
-│   │
-│   ├── storage/
-│   │   └── duckdb.py
-│   │
-│   ├── clustering/
-│   │   └── ...
-│   │
-│   ├── distillation/
-│   │   └── ...
-│   │
-│   └── dashboard/
-│       └── ...
-│
-├── tests/
-│
-├── Dockerfile
-├── docker-compose.yml
-├── pyproject.toml
-├── uv.lock
-└── README.md
-```
-
-Some later-stage directories shown above represent the intended project architecture and may be added as the distillation and dashboard phases are implemented.
-
----
-
-# Technology Stack
-
-| Area                 | Technology                      |
-| -------------------- | ------------------------------- |
-| Language             | Python                          |
-| DataFrames           | Polars, pandas                  |
-| ML                   | scikit-learn, XGBoost, LightGBM |
-| Explainability       | DiCE, SHAP                      |
-| Configuration        | Hydra, OmegaConf                |
-| Optimization         | Optuna                          |
-| Experiment Tracking  | MLflow                          |
-| Analytical Storage   | DuckDB                          |
-| Package Management   | uv                              |
-| Visualization        | Matplotlib, Plotly              |
-| Dashboard            | Streamlit                       |
-| Containers           | Docker, Docker Compose          |
-| Testing              | pytest                          |
-| Linting / Formatting | Ruff, Black                     |
-| Type Checking        | mypy                            |
-
----
-
-# Current Pipeline Status
-
-| Component                           | Status                |
-| ----------------------------------- | --------------------- |
-| Adult dataset ingestion             | Implemented           |
-| Polars preprocessing                | Implemented           |
-| Train-only feature fitting          | Implemented           |
-| One-hot schema alignment            | Implemented           |
-| Random Forest training              | Implemented           |
-| MLflow experiment tracking          | Implemented           |
-| DiCE model adapter                  | Implemented           |
-| Raw-space counterfactual generation | Implemented           |
-| SHAP explanations                   | Implemented           |
-| DuckDB persistence                  | Implemented           |
-| Counterfactual clustering           | In progress / planned |
-| Global rule distillation            | Planned               |
-| Streamlit dashboard                 | Planned               |
-| Full Docker Compose workflow        | Planned               |
-
----
-
-# Design Principles
-
-### 1. Explanations should remain interpretable
-
-Counterfactuals are represented in the original semantic feature space rather than the model's one-hot feature vector.
-
-### 2. Preprocessing should not leak test information
-
-Feature schemas and scaling statistics are learned from training data only.
-
-### 3. Experiments should be reproducible
-
-Hydra, MLflow, fixed seeds, `uv.lock`, and Docker provide reproducible configuration and environments.
-
-### 4. Explanation artifacts should be queryable
-
-DuckDB makes it possible to analyze thousands of counterfactual and SHAP records using SQL.
-
-### 5. Local explanations should lead to global insight
-
-The project does not stop at generating explanations. Its central goal is to aggregate, cluster, and distill them.
-
----
-
-# Example Research Questions
-
-CounterDistill can be used to explore questions such as:
-
-* Which features are most frequently changed across valid counterfactuals?
-* Which feature transitions most often flip a model prediction?
-* Do groups of observations share similar counterfactual paths?
-* How do SHAP importance patterns compare with counterfactual change patterns?
-* Can counterfactual clusters be summarized as decision rules?
-* How faithfully can a small interpretable model represent the behavior encoded in thousands of local explanations?
-* Do different black-box models produce similar counterfactual archetypes?
-
----
-
-# Roadmap
-
-## Phase 1 — ML Engineering Foundation
-
-* [x] Adult Income ingestion
-* [x] Polars feature engineering
-* [x] Hydra configuration
-* [x] sklearn-compatible model training
-* [x] MLflow tracking
-* [x] DuckDB storage
-* [x] uv environment management
-
-## Phase 2 — Local Explainability
-
-* [x] SHAP explanations
-* [x] DiCE integration
-* [x] raw-space counterfactual generation
-* [x] feature-engineering model adapter
-* [x] explanation persistence
-* [x] run-level provenance
-
-## Phase 3 — Counterfactual Aggregation
-
-* [ ] encode counterfactual deltas
-* [ ] construct feature-transition representations
-* [ ] normalize numeric changes
-* [ ] define counterfactual similarity metrics
-* [ ] cluster explanation vectors
-* [ ] evaluate cluster stability
-
-## Phase 4 — Distillation
-
-* [ ] summarize cluster archetypes
-* [ ] extract interpretable rules
-* [ ] train global surrogate models
-* [ ] measure surrogate fidelity
-* [ ] compare distilled rules with SHAP importance
-
-## Phase 5 — Visualization
-
-* [ ] Streamlit dashboard
-* [ ] model/run selector
-* [ ] SHAP feature importance views
-* [ ] counterfactual explorer
-* [ ] cluster visualization
-* [ ] global rule explorer
-
-## Phase 6 — Deployment
-
-* [ ] production Dockerfile
-* [ ] Docker Compose environment
-* [ ] MLflow service
-* [ ] persistent artifact volumes
-* [ ] CI/CD validation
-* [ ] reproducible end-to-end demo
 
 ---
 
 # Testing and Code Quality
 
-Run tests:
+Run the test suite:
 
 ```bash
 uv run pytest
@@ -1063,130 +782,216 @@ uv run pytest
 Run Ruff:
 
 ```bash
-uv run ruff check .
+uv run ruff check src/ tests/
 ```
 
-Format:
+Verify formatting:
 
 ```bash
-uv run ruff format .
+uv run ruff format --check src/ tests/
 ```
 
-Type checking:
+Run static type checking:
 
 ```bash
-uv run mypy src
+uv run mypy src/
 ```
 
-If pre-commit is installed:
+The test suite includes coverage for:
 
-```bash
-uv run pre-commit run --all-files
-```
+* dashboard data access
+* counterfactual intervention encoding
+* K-Means clustering
+* rule extraction and scoring
+* Optuna search spaces
+* model construction
+* classifier evaluation
+* tuning utility behavior
 
 ---
 
-# Reproducibility
-
-The project uses several layers of reproducibility:
-
-```mermaid
-flowchart TD
-    A[uv.lock] --> F[Reproducible Environment]
-    B[Docker] --> F
-
-    C[Hydra Config] --> G[Reproducible Experiment]
-    D[Fixed Random Seeds] --> G
-
-    E[MLflow Run ID] --> H[Reproducible Model]
-    G --> H
-
-    H --> I[Reproducible Explanations]
-    F --> I
-
-    I --> J[DuckDB Provenance]
-```
-
----
-
-# Dataset
-
-The initial benchmark uses the **UCI Adult Income dataset**.
-
-The task is binary classification:
+# Project Structure
 
 ```text
-income <= $50K
-income > $50K
+counterdistill/
+│
+├── app/
+│   └── app.py
+│
+├── configs/
+│   ├── config.yaml
+│   ├── clustering/
+│   ├── data/
+│   ├── feature_engineering/
+│   ├── mlflow/
+│   ├── model/
+│   └── optuna/
+│
+├── data/
+│
+├── database/
+│   ├── counterdistill.db
+│   └── mlflow.db
+│
+├── docker/
+│   ├── Dockerfile
+│   ├── Dockerfile.dockerignore
+│   └── docker-compose.yml
+│
+├── src/
+│   ├── aggregation/
+│   │   └── aggregate.py
+│   │
+│   ├── clustering/
+│   │   ├── kmeans.py
+│   │   └── profiler.py
+│   │
+│   ├── dashboard/
+│   │   ├── app.py
+│   │   └── data.py
+│   │
+│   ├── explainability/
+│   │   ├── dice.py
+│   │   ├── encoder.py
+│   │   ├── explain.py
+│   │   └── shap.py
+│   │
+│   ├── features/
+│   │   └── feature_engineering.py
+│   │
+│   ├── ingestion/
+│   │   └── data_loader.py
+│   │
+│   ├── modeling/
+│   │   ├── train.py
+│   │   └── tune.py
+│   │
+│   ├── rules/
+│   │   ├── evaluator.py
+│   │   └── extractor.py
+│   │
+│   └── storage/
+│       └── duckdb.py
+│
+├── tests/
+│   ├── test_counterfactual_pipeline.py
+│   ├── test_dashboard_data.py
+│   └── test_tuning.py
+│
+├── pyproject.toml
+├── uv.lock
+└── README.md
 ```
 
-The dataset contains demographic and employment-related features such as:
+---
 
-* age
-* education
-* occupation
-* workclass
-* marital status
-* relationship
-* capital gain/loss
-* hours worked per week
-* native country
+# Technology Stack
 
-The dataset is used as a practical benchmark for developing the counterfactual-distillation pipeline; the architecture is intended to support additional tabular classification datasets later.
+| Area                        | Technology                      |
+| --------------------------- | ------------------------------- |
+| Language                    | Python                          |
+| Data processing             | Polars                          |
+| Machine learning            | scikit-learn, XGBoost, LightGBM |
+| Counterfactual explanations | DiCE                            |
+| Feature attribution         | SHAP                            |
+| Counterfactual clustering   | K-Means                         |
+| Configuration               | Hydra, OmegaConf                |
+| Optimization                | Optuna                          |
+| Experiment tracking         | MLflow                          |
+| Analytical storage          | DuckDB                          |
+| Dashboard                   | Streamlit                       |
+| Package management          | uv                              |
+| Containers                  | Docker, Docker Compose          |
+| Testing                     | pytest                          |
+| Linting / formatting        | Ruff                            |
+| Type checking               | mypy                            |
 
 ---
 
-# Limitations and Responsible Interpretation
+# Implementation Status
 
-Counterfactual explanations describe the behavior of the **model**, not necessarily causal relationships in the real world.
-
-For example:
-
-```text
-education -> higher predicted income
-```
-
-does not mean that changing one field in isolation will causally produce a particular real-world outcome.
-
-Additional considerations include:
-
-* immutable or sensitive attributes should generally be excluded from actionable counterfactual changes
-* counterfactual feasibility should be evaluated explicitly
-* model bias can propagate into explanations
-* SHAP values describe model attribution, not causality
-* global distilled rules approximate the source model and should be evaluated for fidelity
-
-Future versions of CounterDistill will explicitly constrain immutable features such as race and sex during counterfactual generation.
-
----
-
-# Contributing
-
-This project is currently being developed as an ML engineering / explainable AI portfolio and research project.
-
-Issues, suggestions, and experiments around:
-
-* counterfactual explanations
-* explainable AI
-* interpretable model distillation
-* explanation clustering
-* ML reproducibility
-
-are welcome.
+| Component                            | Status        |
+| ------------------------------------ | ------------- |
+| Adult Income ingestion               | ✅ Implemented |
+| Polars preprocessing                 | ✅ Implemented |
+| Train-only feature fitting           | ✅ Implemented |
+| 126-feature schema alignment         | ✅ Implemented |
+| Random Forest training               | ✅ Implemented |
+| XGBoost / LightGBM configuration     | ✅ Implemented |
+| MLflow tracking                      | ✅ Implemented |
+| Optuna optimization                  | ✅ Implemented |
+| Nested MLflow Optuna trials          | ✅ Implemented |
+| DiCE semantic model adapter          | ✅ Implemented |
+| Feasible counterfactual generation   | ✅ Implemented |
+| SHAP explanations                    | ✅ Implemented |
+| DuckDB persistence                   | ✅ Implemented |
+| Counterfactual intervention encoding | ✅ Implemented |
+| Counterfactual clustering            | ✅ Implemented |
+| Cluster profiling                    | ✅ Implemented |
+| Global rule extraction               | ✅ Implemented |
+| Rule quality evaluation              | ✅ Implemented |
+| Streamlit dashboard                  | ✅ Implemented |
+| pytest coverage                      | ✅ Implemented |
+| Ruff / mypy quality checks           | ✅ Implemented |
+| Docker runtime                       | ✅ Implemented |
+| Docker Compose services              | ✅ Implemented |
 
 ---
 
-# Author
+# Design Principles
 
-**Rodrick Mpofu**
+### Interpretability first
 
-GitHub: [@rodrick-mpofu](https://github.com/rodrick-mpofu)
+Counterfactuals remain in semantic feature space instead of being presented as changes to one-hot encoded model columns.
+
+### No preprocessing leakage
+
+Feature schemas and scaling statistics are learned using training data only.
+
+### Separate model and explanation representations
+
+SHAP explains the exact model feature space, while DiCE generates human-readable explanations in the original feature space.
+
+### Distill interventions, not people
+
+CounterDistill clusters **feature-change patterns**, not demographic groups or original observations.
+
+### Reproducible experiments
+
+Hydra, MLflow, Optuna, fixed seeds, `uv.lock`, and Docker make model experiments reproducible.
+
+### Queryable explanations
+
+DuckDB makes counterfactual, SHAP, cluster, and rule artifacts available for analytical queries.
+
+### Local explanations should produce global insight
+
+The project treats local counterfactual generation as the starting point rather than the final output.
 
 ---
 
-# License
+# Limitations and Future Work
 
-Add the repository's chosen open-source license here once finalized.
+CounterDistill currently demonstrates the approach on the Adult Income dataset and binary classification.
 
-# Launch dashboard
-make dashboard
+Potential extensions include:
+
+* evaluating additional datasets and domains
+* comparing clustering algorithms
+* comparing rule-extraction strategies
+* measuring stability of distilled rules across seeds and models
+* evaluating counterfactual fairness
+* adding model-to-model rule comparisons
+* experimenting with interpretable surrogate models
+* adding richer experiment comparison to the dashboard
+* deploying the dashboard and MLflow services to a remote environment
+
+---
+
+# Disclaimer
+
+Counterfactual explanations answer questions about **model prediction behavior under hypothetical feature changes**.
+
+They do not establish that making those changes in the real world would cause the predicted outcome.
+
+The distilled rules in CounterDistill should therefore be interpreted as summaries of model behavior rather than causal, normative, or prescriptive recommendations.
