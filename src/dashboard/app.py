@@ -799,22 +799,22 @@ def render_shap(
     chart_col, table_col = st.columns([2, 1])
 
     with chart_col:
-        local_chart = local_top.sort("shap_value")
+        local_chart = local_top.with_columns(
+            pl.when(pl.col("shap_value") >= 0)
+            .then(pl.lit("#ff0051"))
+            .otherwise(pl.lit("#008bfb"))
+            .alias("bar_color")
+        ).sort("shap_value")
 
         st.bar_chart(
             local_chart,
             x="feature_name",
             y="shap_value",
+            color="bar_color",
             horizontal=True,
             sort=False,
             x_label="SHAP Value",
             y_label="Feature",
-        )
-
-        st.caption(
-            "Positive values push the model output "
-            "higher; negative values push it lower "
-            "relative to the model baseline."
         )
 
     with table_col:
