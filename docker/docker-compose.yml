@@ -1,26 +1,86 @@
-version: '3.8'
-
 services:
   counterdistill:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    ports:
-      - "8501:8501"
+
+    image: counterdistill:local
+
+    working_dir: /app
+
     volumes:
-      - ./data:/app/data
-      - ./database:/app/database
-      - ./outputs:/app/outputs
-      - ./mlruns:/app/mlruns
+      - ../data:/app/data
+      - ../database:/app/database
+      - ../outputs:/app/outputs
+      - ../mlruns:/app/mlruns
+
     environment:
-      - MLFLOW_TRACKING_URI=http://mlflow:5000
-    depends_on:
-      - mlflow
+      PYTHONUNBUFFERED: "1"
+
+    command:
+      - python
+      - -m
+      - src.modeling.train
+      - model=random_forest
+
+    profiles:
+      - tools
+
 
   mlflow:
-    image: ghcr.io/mlflow/mlflow:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    image: counterdistill:local
+
+    working_dir: /app
+
     ports:
       - "5000:5000"
+
     volumes:
-      - ./mlruns:/mlruns
-    command: mlflow server --host 0.0.0.0 --port 5000 --backend-store-uri sqlite:///mlruns/mlflow.db --default-artifact-root /mlruns
+      - ../database:/app/database
+      - ../mlruns:/app/mlruns
+
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:///database/mlflow.db
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+      - --workers
+      - "1"
+
+    restart: unless-stopped
+
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+
+    image: counterdistill:local
+
+    working_dir: /app
+
+    ports:
+      - "8501:8501"
+
+    volumes:
+      - ../database:/app/database
+
+    environment:
+      PYTHONUNBUFFERED: "1"
+
+    command:
+      - streamlit
+      - run
+      - app/app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+
+    restart: unless-stopped

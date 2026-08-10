@@ -1,31 +1,24 @@
-FROM python:3.10-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/app/.venv/bin:$PATH"
+
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copy project files
-COPY pyproject.toml uv.lock* ./
+COPY pyproject.toml uv.lock README.md ./
 COPY src/ ./src/
+
+RUN uv sync --frozen --no-dev
+
 COPY configs/ ./configs/
 COPY app/ ./app/
 
-# Install dependencies
-RUN uv sync --frozen --no-dev
-
-# Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
-
-# Expose ports
-EXPOSE 8501 5000
-
-# Default command
-CMD ["uv", "run", "streamlit", "run", "app/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["python", "-m", "src.modeling.train"]
