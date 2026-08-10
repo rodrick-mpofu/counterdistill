@@ -574,6 +574,259 @@ def render_global_rules(
     )
 
 
+def render_shap(
+    data: DashboardData,
+    run_id: str,
+) -> None:
+    """Render global and local SHAP explanations."""
+    st.title("SHAP Explorer")
+
+    st.caption(
+        "Explore global feature importance and " "instance-level model contributions."
+    )
+
+    # -------------------------------------------------
+    # Global SHAP importance
+    # -------------------------------------------------
+
+    st.subheader("Global Feature Importance")
+
+    top_n = st.slider(
+        "Number of features",
+        min_value=5,
+        max_value=30,
+        value=15,
+        step=5,
+    )
+
+    importance = data.shap_importance(
+        run_id=run_id,
+        limit=top_n,
+    )
+
+    if importance.is_empty():
+        st.info("No SHAP values are available " "for this run.")
+        return
+
+    global_left, global_right = st.columns([2, 1])
+
+    with global_left:
+        chart_data = importance.sort("mean_abs_shap")
+
+        st.bar_chart(
+            chart_data,
+            x="feature_name",
+            y="mean_abs_shap",
+            horizontal=True,
+            sort=False,
+            x_label="Mean |SHAP value|",
+            y_label="Feature",
+        )
+
+    with global_right:
+        st.markdown("#### Top Features")
+
+        ranked_importance = importance.with_row_index(
+            name="rank",
+            offset=1,
+        )
+
+        st.dataframe(
+            ranked_importance,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "rank": (
+                    st.column_config.NumberColumn(
+                        "Rank",
+                        format="%d",
+                    )
+                ),
+                "feature_name": (st.column_config.TextColumn("Feature")),
+                "mean_abs_shap": (
+                    st.column_config.NumberColumn(
+                        "Mean |SHAP|",
+                        format="%.4f",
+                    )
+                ),
+            },
+        )
+
+    st.caption(
+        "Mean absolute SHAP value measures how "
+        "strongly a feature influences predictions "
+        "on average, regardless of direction."
+    )
+
+    st.divider()
+
+    # -------------------------------------------------
+    # Local explanations
+    # -------------------------------------------------
+
+    st.subheader("Instance-Level Explanation")
+
+    instance_ids = data.shap_instances(run_id)
+
+    if not instance_ids:
+        st.info("No instance-level SHAP explanations " "are available for this run.")
+        return
+
+    control_col1, control_col2 = st.columns(2)
+
+    with control_col1:
+        selected_instance = st.selectbox(
+            "Instance",
+            options=instance_ids,
+        )
+
+    with control_col2:
+        local_top_n = st.slider(
+            "Local features",
+            min_value=5,
+            max_value=30,
+            value=15,
+            step=5,
+        )
+
+    local_shap = data.shap_for_instance(
+        run_id=run_id,
+        instance_id=selected_instance,
+    )
+
+    if local_shap.is_empty():
+        st.warning("No SHAP explanation was found " "for this instance.")
+        return
+
+    # The query is already ordered by absolute SHAP value.
+    local_top = local_shap.head(local_top_n)
+
+    # -------------------------------------------------
+    # Local summary metrics
+    # -------------------------------------------------
+
+    positive = local_shap.filter(pl.col("shap_value") > 0)
+
+    negative = local_shap.filter(pl.col("shap_value") < 0)
+
+    strongest_positive_feature = "N/A"
+    strongest_positive_value = 0.0
+
+    if not positive.is_empty():
+        positive_row = positive.sort(
+            "shap_value",
+            descending=True,
+        ).row(
+            0,
+            named=True,
+        )
+
+        strongest_positive_feature = str(positive_row["feature_name"])
+
+        strongest_positive_value = float(positive_row["shap_value"])
+
+    strongest_negative_feature = "N/A"
+    strongest_negative_value = 0.0
+
+    if not negative.is_empty():
+        negative_row = negative.sort("shap_value").row(
+            0,
+            named=True,
+        )
+
+        strongest_negative_feature = str(negative_row["feature_name"])
+
+        strongest_negative_value = float(negative_row["shap_value"])
+
+    total_abs_value = local_shap.select(
+        pl.col("shap_value").abs().sum().alias("total_abs_shap")
+    ).item()
+
+    total_abs_shap = float(total_abs_value if total_abs_value is not None else 0.0)
+
+    metric1, metric2, metric3 = st.columns(3)
+
+    metric1.metric(
+        "Strongest Positive",
+        strongest_positive_feature,
+        delta=(f"{strongest_positive_value:+.4f}"),
+    )
+
+    metric2.metric(
+        "Strongest Negative",
+        strongest_negative_feature,
+        delta=(f"{strongest_negative_value:+.4f}"),
+        delta_color="inverse",
+    )
+
+    metric3.metric(
+        "Total |SHAP|",
+        f"{total_abs_shap:.4f}",
+    )
+
+    st.divider()
+
+    # -------------------------------------------------
+    # Local SHAP chart
+    # -------------------------------------------------
+
+    st.markdown(f"#### Contributions for Instance " f"{selected_instance}")
+
+    chart_col, table_col = st.columns([2, 1])
+
+    with chart_col:
+        local_chart = local_top.sort("shap_value")
+
+        st.bar_chart(
+            local_chart,
+            x="feature_name",
+            y="shap_value",
+            horizontal=True,
+            sort=False,
+            x_label="SHAP Value",
+            y_label="Feature",
+        )
+
+        st.caption(
+            "Positive values push the model output "
+            "higher; negative values push it lower "
+            "relative to the model baseline."
+        )
+
+    with table_col:
+        st.markdown("#### Feature Details")
+
+        st.dataframe(
+            local_top.select(
+                [
+                    "feature_name",
+                    "feature_value",
+                    "shap_value",
+                ]
+            ),
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "feature_name": (st.column_config.TextColumn("Feature")),
+                "feature_value": (st.column_config.TextColumn("Value")),
+                "shap_value": (
+                    st.column_config.NumberColumn(
+                        "SHAP",
+                        format="%.4f",
+                    )
+                ),
+            },
+        )
+
+    st.divider()
+
+    st.info(
+        "SHAP values explain the model's prediction "
+        "behavior. They identify influential model "
+        "features but do not establish causal effects."
+    )
+
+
 def main() -> None:
     """Run the CounterDistill dashboard."""
     data = get_data()
@@ -628,9 +881,10 @@ def main() -> None:
         )
 
     elif page == "SHAP":
-        st.title("SHAP Explanations")
-
-        st.info("SHAP explorer coming next.")
+        render_shap(
+            data=data,
+            run_id=selected_run,
+        )
 
 
 if __name__ == "__main__":

@@ -315,3 +315,23 @@ class DashboardData:
             raise ValueError("Expected stored JSON list.")
 
         return [str(item) for item in parsed]
+
+    def shap_instances(
+        self,
+        run_id: str,
+    ) -> list[int]:
+        """Return instance IDs with stored SHAP explanations."""
+        result = self._query(
+            """
+            SELECT DISTINCT instance_id
+            FROM shap_values
+            WHERE run_id = ?
+            ORDER BY instance_id
+            """,
+            [run_id],
+        )
+
+        if result.is_empty():
+            return []
+
+        return [int(value) for value in result["instance_id"].to_list()]
